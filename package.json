@@ -1,5 +1,5 @@
 {
-  "name": "library-template",
+  "name": "deopt-mcp",
   "version": "0.0.0",
   "description": "A minimal repo configured with modern JavaScript tooling to scaffold new libraries",
   "keywords": [],
@@ -15,6 +15,9 @@
   ],
   "type": "module",
   "sideEffects": false,
+  "bin": {
+    "deopt-mcp": "./dist/main.mjs"
+  },
   "exports": {
     ".": {
       "import": {
@@ -37,10 +40,10 @@
     "test": "vp test --fileParallelism"
   },
   "devDependencies": {
-    "@saeris/configs": "^1.0.0",
-    "@types/node": "^25.9.1",
-    "@varlock/bumpy": "^1.7.0",
-    "@vitest/coverage-v8": "^4.1.6",
+    "@saeris/configs": "^1.6.1",
+    "@types/node": "^26.0.1",
+    "@varlock/bumpy": "^1.18.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "typescript": "6.0.3",
     "vite-plus": "latest",
     "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
@@ -52,5 +55,10 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "yarn@4.16.0"
+  "packageManager": "yarn@4.17.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@valibot/to-json-schema": "^1.7.1",
+    "valibot": "^1.4.2"
+  }
 }
