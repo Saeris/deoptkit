@@ -951,9 +951,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"deopt-mcp@workspace:.":
+"deoptkit@workspace:.":
   version: 0.0.0-use.local
-  resolution: "deopt-mcp@workspace:."
+  resolution: "deoptkit@workspace:."
   dependencies:
     "@jridgewell/trace-mapping": "npm:^0.3.31"
     "@modelcontextprotocol/sdk": "npm:^1.29.0"
@@ -967,7 +967,7 @@ __metadata:
     vite-plus: "npm:latest"
     vitest: "npm:@voidzero-dev/vite-plus-test@latest"
   bin:
-    deopt-mcp: ./dist/main.mjs
+    deoptkit: ./dist/main.mjs
   languageName: unknown
   linkType: soft
 

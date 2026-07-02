@@ -36,7 +36,7 @@ describe("compareSessions on the map-churn fix-verify pair", () => {
   let comparison: SessionComparison;
 
   beforeAll(async () => {
-    fixtureDir = await mkdtemp(join(tmpdir(), "deopt-mcp-compare-"));
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-compare-"));
     const base = await profileAs("map-churn.js", fixtureDir);
     const head = await profileAs("map-churn-fixed.js", fixtureDir);
     comparison = compareSessions(base, head);

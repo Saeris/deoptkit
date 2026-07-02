@@ -24,13 +24,13 @@ const textPayload = (
   return JSON.parse(first.text) as Record<string, unknown>;
 };
 
-describe("deopt-mcp server", () => {
+describe("deoptkit server", () => {
   let client: Client;
   let fixtureDir: string;
 
   beforeAll(async () => {
     client = await connect();
-    fixtureDir = await mkdtemp(join(tmpdir(), "deopt-mcp-test-"));
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-test-"));
   });
 
   afterAll(async () => {

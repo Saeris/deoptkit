@@ -53,7 +53,7 @@ describe("sourceMapResolver on a transpiled TypeScript workload", () => {
   let model: LogModel;
 
   beforeAll(async () => {
-    fixtureDir = await mkdtemp(join(tmpdir(), "deopt-mcp-sourcemap-"));
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-sourcemap-"));
     const { outputText } = ts.transpileModule(TS_SOURCE, {
       fileName: "app.ts",
       compilerOptions: {

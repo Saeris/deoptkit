@@ -55,7 +55,7 @@ const resolveExecutable = (executable: string): string => {
 /** Run a command under V8 logging flags, writing v8.log into a fresh temp dir. */
 export const runWorkload = async (options: RunOptions): Promise<RunResult> => {
   const [executable, ...args] = options.command;
-  const dir = await mkdtemp(join(tmpdir(), "deopt-mcp-run-"));
+  const dir = await mkdtemp(join(tmpdir(), "deoptkit-run-"));
   const logfile = join(dir, "v8.log");
   const categories = options.categories ?? [...LOG_CATEGORIES];
   const flags = [

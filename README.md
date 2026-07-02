@@ -1,20 +1,20 @@
 <div align="center">
 
-# 🔥 deopt-mcp
+# 🔥 deoptkit
 
-An MCP server that gives AI agents visibility into V8's optimization behavior — inline cache states, deoptimizations, hidden-class (map) churn, and CPU profile data — for JavaScript and TypeScript running on Node.js.
+A V8 deoptimization toolkit for JavaScript and TypeScript on Node.js — visibility into inline cache states, deoptimizations, hidden-class (map) churn, and CPU profile data, packaged for AI agents and everyday dev workflows.
 
 </div>
 
 ---
 
-deopt-mcp is a rebuild of Microsoft's [Deopt Explorer](https://github.com/microsoft/deoptexplorer-vscode) VSCode extension, re-targeted at AI agents instead of humans and updated for modern V8 (tested against V8 14 / Node 26; the original supported V8 8–9). Where the extension offered tree views and editor decorations to browse, this server answers the question agents actually ask: **"what should I fix first?"** — with ranked findings, explanations, suggested fixes, and a first-class before/after comparison to verify the fix worked.
+deoptkit began as a rebuild of Microsoft's [Deopt Explorer](https://github.com/microsoft/deoptexplorer-vscode) VSCode extension, re-targeted at AI agents instead of humans and updated for modern V8 (tested against V8 14 / Node 26; the original supported V8 8–9). Where the extension offered tree views and editor decorations to browse, deoptkit answers the question agents actually ask: **"what should I fix first?"** — with ranked findings, explanations, suggested fixes, and a first-class before/after comparison to verify the fix worked.
 
 Background reading: the TypeScript team's [Introducing Deopt Explorer](https://devblogs.microsoft.com/typescript/introducing-deopt-explorer/) article, where this class of analysis produced an 8–10% compiler speedup.
 
 ## 🚧 Status
 
-Pre-release. The core loop works end-to-end (see the tools below); source-map support for TypeScript projects, session eviction, and npm publishing are still in progress. See [docs/SPEC.md](./docs/SPEC.md) for the full plan.
+Pre-release. The **MCP server** — the kit's first surface — works end-to-end with source maps and the full fix-verify loop (see the tools below). Next surfaces, spec'd in [docs/BENCHMARKING.md](./docs/BENCHMARKING.md): a benchmark **harness** with in-log markers, a **vitest bench preset**, **CI baseline gating**, and an **LSP server** for inline deopt squiggles in the editor. [docs/SPEC.md](./docs/SPEC.md) covers the shipped v1.
 
 ## 📦 Setup
 
@@ -72,7 +72,7 @@ Tests generate real V8 logs at run time by executing the pathological workloads 
 
 ## 📣 Acknowledgements
 
-deopt-mcp derives its log-parsing approach from [deoptexplorer-vscode](https://github.com/microsoft/deoptexplorer-vscode) (MIT), which in turn incorporates code from [V8](https://v8.dev)'s tick processor (BSD-3-Clause) and [thlorenz/deoptigate](https://github.com/thlorenz/deoptigate) (MIT). Portions of `src/parser/csv.ts` are derived from V8's `tools/csvparser.mjs`.
+deoptkit derives its log-parsing approach from [deoptexplorer-vscode](https://github.com/microsoft/deoptexplorer-vscode) (MIT), which in turn incorporates code from [V8](https://v8.dev)'s tick processor (BSD-3-Clause) and [thlorenz/deoptigate](https://github.com/thlorenz/deoptigate) (MIT). Portions of `src/parser/csv.ts` are derived from V8's `tools/csvparser.mjs`.
 
 ## 🥂 License
 

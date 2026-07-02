@@ -11,7 +11,7 @@ describe("parseLog on a real generated V8 log", () => {
   let model: LogModel;
 
   beforeAll(async () => {
-    fixtureDir = await mkdtemp(join(tmpdir(), "deopt-mcp-parse-"));
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-"));
     model = await parseLog(generateWorkloadLog("megamorphic", fixtureDir));
   }, 60_000);
 

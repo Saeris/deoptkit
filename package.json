@@ -1,14 +1,26 @@
 {
-  "name": "deopt-mcp",
+  "name": "deoptkit",
   "version": "0.0.0",
-  "description": "A minimal repo configured with modern JavaScript tooling to scaffold new libraries",
-  "keywords": [],
-  "homepage": "https://github.com/Saeris/library-template#readme",
+  "description": "A V8 deoptimization toolkit for AI agents and dev workflows: MCP server, findings engine, benchmark harness, and fix-verify comparison for inline caches, deopts, and hidden-class churn",
+  "keywords": [
+    "v8",
+    "deoptimization",
+    "deopt",
+    "performance",
+    "profiling",
+    "inline-cache",
+    "hidden-class",
+    "mcp",
+    "modelcontextprotocol",
+    "mcp-server",
+    "benchmark"
+  ],
+  "homepage": "https://github.com/Saeris/deoptkit#readme",
   "license": "MIT",
   "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Saeris/library-template.git"
+    "url": "https://github.com/Saeris/deoptkit.git"
   },
   "files": [
     "dist/**/*"

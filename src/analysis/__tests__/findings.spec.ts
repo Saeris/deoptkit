@@ -14,7 +14,7 @@ describe("computeFindings across the pathology fixtures", () => {
   let mapChurn: Finding[];
 
   beforeAll(async () => {
-    fixtureDir = await mkdtemp(join(tmpdir(), "deopt-mcp-findings-"));
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-findings-"));
     megamorphic = computeFindings(
       await parseLog(generateWorkloadLog("megamorphic", fixtureDir))
     );
