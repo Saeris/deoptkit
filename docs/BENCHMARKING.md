@@ -101,20 +101,28 @@ deopt-mcp ci --update bench/parse.bench.mjs   # accept current findings as basel
 - Runs the same bin, no MCP host needed: the existing `main.ts` grows argv dispatch (`deopt-mcp` with no args = stdio server, unchanged).
 - CI examples for GitHub Actions in the docs; works on any runner because structural signals don't care about noisy neighbors.
 
-## 8. Lint-channel integration: ESLint + Oxlint (v1.3)
+## 8. Inline editor surfacing: the perf-linting layer for vitest bench (v1.3)
 
-Structural signals are deterministic **given runtime inputs** — they are not statically derivable from code, because morphism is a property of the data flowing through a site, not the site itself (`return obj.x` is monomorphic or megamorphic depending on callers a linter cannot see). A "static deopt linter" is therefore mostly impossible; what works is splitting the idea in two:
+The goal experience, Wallaby/Quokka-style: **run benchmarks, see the deopt findings as squiggles on the offending lines** — no hunting through the codebase, no reading a JSON file. Two design constraints frame the implementation:
 
-1. **Findings as diagnostics (the valuable half).** Observation runs (bench or `deopt-mcp ci`) write `.deopt/findings.json`; a lint rule (`deopt-mcp/report-findings`) reads it and emits each finding as a warning at its `original` source position. Findings then flow through the channel developers and agents already consume — editor squiggles, `eslint .` output, CI annotations, LSP diagnostics — with the explanation and suggested fix in the message. Oxlint's JS-plugin support is ESLint-rule-API compatible, so one implementation serves both. Staleness handling: the rule includes the observation timestamp and goes silent (or downgrades to info) when the findings file is older than the source file it annotates.
-2. **A few honestly-static heuristic rules (the modest half).** Only patterns visible in code alone: `delete obj.prop` on non-dictionary-intended objects, conditional property assignment in constructors/factories, inconsistent property order across literals of the same conceptual type. These ship as **suggestions, not auto-fixes** — the one plausible codemod is map-churn normalization (rewrite conditional assignments to unconditional fixed-order initialization with `null`/`undefined` defaults), and even that changes enumerable keys, so it stays a suggestion an agent or human applies deliberately.
+- Structural signals are deterministic **given runtime inputs**, not statically derivable — morphism is a property of the data flowing through a site (`return obj.x` is monomorphic or megamorphic depending on callers no static tool can see). So this layer is strictly a _presentation channel for observation results_, never a static analyzer. A previous draft of this section proposed ESLint/Oxlint plugins as the channel; that piggybacked perf findings onto a code-style pipeline and is dropped.
+- `.deopt/findings.json` (written by the vitest preset and `deopt-mcp ci`, positioned via `original` source-mapped locations) stays the single interchange artifact: agents, CI, and every editor surface read the same file.
+
+Delivery in two stages:
+
+1. **LSP diagnostics server (`deopt-mcp lsp`, v1.3).** A small Language Server on the existing bin that watches `.deopt/findings.json` and publishes each finding as an LSP diagnostic at its original source position — severity mapped from the finding score (error ≥ 60, warning ≥ 25, info below), hover carrying the summary, explanation, suggested fix, and tick evidence. Squiggles and the Problems panel come free in any LSP-capable editor (VSCode/Cursor via a generic LSP client or a 30-line shell, Zed, Neovim, JetBrains). Diagnostics refresh live on file change, completing the loop: `vitest bench --watch` → preset rewrites findings.json → squiggles update. Latency is seconds (a bench re-run plus parse), not Wallaby-instant — and unlike instrumented inline values, the numbers are valid _because_ the code ran uninstrumented in forked processes. Staleness: findings older than the annotated file's mtime downgrade to info with a "re-run bench" hint rather than disappearing.
+2. **VSCode extension proper (v1.4+, only if the LSP proves demand).** Richer rendering: severity-tinted line decorations, gutter icons, Quokka-style CodeLens (`megamorphic LoadIC "id" · 41 self ticks`). This is knowingly rebuilding deoptexplorer-vscode's presentation layer — the half this project cut — so it ships only as a thin projection over the maintained engine and findings interchange, never as load-bearing logic. The original died as a UI welded to an unmaintained engine; the lesson is encoded in this ordering.
+
+Static heuristic lint rules (conditional constructor assignment, `delete`, property-order drift) are cut from the roadmap entirely: without observation data they are guesswork, and with observation data they are redundant.
 
 ## 9. Delivery order
 
 | Release | Contents                                                                                                                                                                            | Rationale                                                        |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | v1.1    | harness (`mark`/`observed`), window params on tools, vitest bench preset + `load_manifest`, bench convention + schema-driven (Valimock) recipe docs; dogfood on Valimock/Discordkit | Makes observation easy where warm-up already exists              |
-| v1.2    | `deopt-mcp ci` + baselines, `deopt-mcp/serve` + Next/Astro/build recipes                                                                                                            | Makes it durable (CI) and applicable to apps, not just libraries |
-| v1.3    | findings-as-diagnostics lint rule (ESLint/Oxlint) + static heuristic rules, child-process flag propagation research, `get_profile` call trees, npm publish of the above             | Depth and reach                                                  |
+| v1.2    | `deopt-mcp ci` + baselines (with GitHub `::warning` annotations), `deopt-mcp/serve` + Next/Astro/build recipes                                                                      | Makes it durable (CI) and applicable to apps, not just libraries |
+| v1.3    | `deopt-mcp lsp` inline diagnostics (the vitest-bench perf-linting loop), child-process flag propagation research, `get_profile` call trees, npm publish of the above                | Depth and reach                                                  |
+| v1.4+   | VSCode extension with decorations/CodeLens — only if the LSP surface proves demand                                                                                                  | Rich rendering as a thin projection                              |
 
 ## 10. Open questions
 
@@ -122,4 +130,5 @@ Structural signals are deterministic **given runtime inputs** — they are not s
 2. Should `deopt-mcp ci` also run vitest-bench manifests, or only plain bench scripts? (Leaning: plain scripts first; manifest support when the preset stabilizes.)
 3. Baseline granularity: per-bench-file vs one repo-wide file (leaning per-file, mirroring snapshot conventions).
 4. Does Valimock's current API accept a caller-provided seeded faker instance? If not, that is the first upstream PR the dogfood exercise produces.
-5. Lint staleness policy: silent vs info-level when findings predate the file's mtime (leaning info-level so the signal's existence stays discoverable).
+5. Diagnostics staleness policy: silent vs info-level when findings predate the annotated file's mtime (leaning info-level with a "re-run bench" hint so the signal's existence stays discoverable).
+6. LSP severity thresholds (error ≥ 60 / warning ≥ 25 / info) — tune once real Valimock/Discordkit findings exist to calibrate against.
