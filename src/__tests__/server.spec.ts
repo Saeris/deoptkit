@@ -64,6 +64,21 @@ describe("deopt-mcp server", () => {
     });
   });
 
+  describe("prompts", () => {
+    it("serves the analyze-performance prompt with the command inlined", async () => {
+      const { prompts } = await client.listPrompts();
+      expect(prompts.map(({ name }) => name)).toEqual(["analyze-performance"]);
+      const prompt = await client.getPrompt({
+        name: "analyze-performance",
+        arguments: { command: "node bench.js" }
+      });
+      const [message] = prompt.messages;
+      const text = message?.content.type === "text" ? message.content.text : "";
+      expect(text).toContain("node bench.js");
+      expect(text).toContain("compare_sessions");
+    });
+  });
+
   describe("list_sessions", () => {
     it("returns an empty session list on a fresh server", async () => {
       const result = await client.callTool({

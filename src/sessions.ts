@@ -19,7 +19,14 @@ export interface SessionSummary {
   deoptSites: number;
 }
 
-/** In-memory registry of loaded log sessions. */
+/**
+ * Parsed models hold every map entry and script source, so sessions are memory-heavy;
+ * keep only the most recent few. Compare workflows need two, plus headroom to poke at
+ * older runs.
+ */
+const MAX_SESSIONS = 8;
+
+/** In-memory registry of loaded log sessions, evicting the oldest past MAX_SESSIONS. */
 export class SessionStore {
   #sessions = new Map<string, Session>();
   #nextId = 1;
@@ -32,6 +39,12 @@ export class SessionStore {
       model
     };
     this.#sessions.set(session.id, session);
+    // Map preserves insertion order, so the first key is always the oldest session.
+    while (this.#sessions.size > MAX_SESSIONS) {
+      const oldest = this.#sessions.keys().next().value;
+      if (oldest === undefined) break;
+      this.#sessions.delete(oldest);
+    }
     return session;
   }
 

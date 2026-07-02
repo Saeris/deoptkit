@@ -8,15 +8,22 @@ on:
 
 jobs:
   ci:
-    name: Check & Test (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
+    name: Check & Test (Node ${{ matrix.node-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # Active LTS and Current track the Node release calendar automatically.
         # Previous LTS is pinned; bump it once per year when a new even-numbered
-        # Node major reaches LTS status.
+        # Node major reaches LTS status. Each Node major ships a different V8, so
+        # this matrix doubles as the V8 log-format drift canary: tests generate
+        # real logs from fixtures/workloads at run time.
         node-version: ["22", "lts", "latest"]
+        os: [ubuntu-latest]
+        include:
+          # V8 log paths/sampling differ on Windows; cover it on one LTS lane.
+          - node-version: "lts"
+            os: windows-latest
     steps:
       - uses: actions/checkout@v6
 
