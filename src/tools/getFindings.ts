@@ -1,5 +1,6 @@
 import * as v from "valibot";
 import { computeFindings } from "../analysis/findings";
+import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   limitSchema,
@@ -45,11 +46,14 @@ export const getFindings = defineTool({
   handler: ({ sessionId, kinds, severityMin, limit }, ctx) => {
     const session = ctx.sessions.get(sessionId);
     if (!session) return unknownSessionError(sessionId);
-    const findings = computeFindings(session.model).filter(
-      (candidate) =>
-        (kinds === undefined || kinds.includes(candidate.kind)) &&
-        (severityMin === undefined || candidate.severity >= severityMin)
-    );
+    const resolver = resolverFor(session);
+    const findings = computeFindings(session.model)
+      .filter(
+        (candidate) =>
+          (kinds === undefined || kinds.includes(candidate.kind)) &&
+          (severityMin === undefined || candidate.severity >= severityMin)
+      )
+      .map((candidate) => withOriginal(resolver, candidate));
     return jsonResult(paginate(findings, limit));
   }
 });

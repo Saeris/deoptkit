@@ -15,9 +15,7 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "bin": {
-    "deopt-mcp": "./dist/main.mjs"
-  },
+  "bin": "./dist/main.mjs",
   "exports": {
     ".": {
       "import": {
@@ -57,6 +55,7 @@
   },
   "packageManager": "yarn@4.17.0",
   "dependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@valibot/to-json-schema": "^1.7.1",
     "valibot": "^1.4.2"

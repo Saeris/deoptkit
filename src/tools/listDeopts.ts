@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   fileFilterSchema,
@@ -38,12 +39,15 @@ export const listDeopts = defineTool({
   handler: ({ sessionId, kinds, file, minCount, limit, offset }, ctx) => {
     const session = ctx.sessions.get(sessionId);
     if (!session) return unknownSessionError(sessionId);
-    const sites = session.model.deopts.filter(
-      (site) =>
-        (kinds === undefined || kinds.includes(site.kind)) &&
-        (minCount === undefined || site.count >= minCount) &&
-        matchesFile(site.file, file)
-    );
+    const resolver = resolverFor(session);
+    const sites = session.model.deopts
+      .filter(
+        (site) =>
+          (kinds === undefined || kinds.includes(site.kind)) &&
+          (minCount === undefined || site.count >= minCount) &&
+          matchesFile(site.file, file)
+      )
+      .map((site) => withOriginal(resolver, site));
     return jsonResult(paginate(sites, limit, offset));
   }
 });

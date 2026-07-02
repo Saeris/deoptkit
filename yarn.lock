@@ -955,6 +955,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "deopt-mcp@workspace:."
   dependencies:
+    "@jridgewell/trace-mapping": "npm:^0.3.31"
     "@modelcontextprotocol/sdk": "npm:^1.29.0"
     "@saeris/configs": "npm:^1.6.1"
     "@types/node": "npm:^26.0.1"
@@ -965,6 +966,8 @@ __metadata:
     valibot: "npm:^1.4.2"
     vite-plus: "npm:latest"
     vitest: "npm:@voidzero-dev/vite-plus-test@latest"
+  bin:
+    deopt-mcp: ./dist/main.mjs
   languageName: unknown
   linkType: soft
 

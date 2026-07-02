@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import { resolverFor } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import { limitSchema, sessionIdSchema, unknownSessionError } from "./shared";
 
@@ -156,6 +157,7 @@ export const getFunction = defineTool({
       file: url,
       functionName: fn?.functionName ?? functionName,
       anchorLine: anchor,
+      original: resolverFor(session).resolve(url, anchor, fn?.column ?? 1),
       optimizationTiers: fn?.tiers,
       codeCreations: fn?.codeCreations,
       ticks,
