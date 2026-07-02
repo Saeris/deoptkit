@@ -57,6 +57,8 @@ export const loadLog = defineTool({
       counts: {
         icSites: model.ics.length,
         deoptSites: model.deopts.length,
+        mapsCreated: model.maps.createdCount,
+        mapTransitionSites: model.maps.transitionSites.length,
         codeEntries: model.codeEntryCount
       },
       warnings: model.warnings

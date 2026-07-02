@@ -98,7 +98,7 @@ THIRD_PARTY_NOTICES # V8 (BSD-3), deoptigate (MIT) attribution
 Dependencies (runtime): `@modelcontextprotocol/sdk`, `zod`, `semver`,
 `source-map-js` (or `@jridgewell/trace-mapping`). Notably **dropped** from the
 original: all of `@esfx/*` (replaced by plain Map/Set + a ported splay tree),
-`ffi-napi`/`ref-*` (native symbol resolution — cut, see §8), and everything
+`ffi-napi`/`ref-*` (native symbol resolution — cut, see §9), and everything
 VSCode.
 
 ### Porting strategy
@@ -228,7 +228,13 @@ annotated snippets, source map support, README + prompt, npm publish dry-run.
   megamorphic site with ticks must outrank a tickless one").
 - **Contract tests** for tools via in-memory MCP client from the SDK.
 
-## 8. Non-goals (v1)
+## 8. Integrations (post-v1)
+
+**Vitest preset** (`deopt-mcp/vitest`): V8 logging flags are process-startup flags, and vitest's `pool: "forks"` + `poolOptions.forks.execArgv` injects them into the worker processes that execute tests. The preset configures the fork pool, the flag set, and per-process logfiles in a scratch directory; after the run, sessions load via `load_log`. Requirements and caveats: forks only (threads interleave isolate logs in one file), source-map resolution is a hard prerequisite (vitest executes Vite-transformed code), coverage must be off (instrumentation perturbs optimization), and a timestamp-bracketing helper (`markStart`/`markEnd`) lets analysis window a session to one benchmark block since every log event is timestamped.
+
+**Wallaby/Quokka: deliberately unsupported for perf.** Their workers accept node flags (`env.params.runner`), but their statement-level instrumentation changes the optimization behavior being measured — function sizes cross inlining thresholds, injected closures alter IC feedback. Correctness feedback and perf truth need different execution contexts; perf runs belong on uninstrumented code via `profile_run`.
+
+## 9. Non-goals (v1)
 
 - **Native/C++ symbol resolution** (`dumpbin`/`nm`, `ffi-napi`) — native deps
   are unmaintained and the payoff for JS/TS work is marginal. `parserWarnings`
@@ -239,7 +245,7 @@ annotated snippets, source map support, README + prompt, npm publish dry-run.
 - V8 < 11 log formats unless the ported tables cover them for free.
 - HTTP transport (stdio only; the SDK makes adding it later trivial).
 
-## 9. Risks
+## 10. Risks
 
 | Risk                                 | Mitigation                                                                                           |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |

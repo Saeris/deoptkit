@@ -114,6 +114,8 @@ describe("deopt-mcp server", () => {
       expect(payload.counts).toEqual({
         icSites: 0,
         deoptSites: 0,
+        mapsCreated: 0,
+        mapTransitionSites: 0,
         codeEntries: 0
       });
 

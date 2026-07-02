@@ -95,12 +95,53 @@ describe("parseLog on a real generated V8 log", () => {
     expect(model.codeEntryCount).toBeGreaterThan(100);
   });
 
+  // Each shape literal in the workload adds `x` at a different offset, so V8 records
+  // a map Transition per shape, all attributed to the literal site. Losing this means
+  // losing the map-churn signal that explains WHY a site went megamorphic.
+  it("attributes the shape literals' map transitions to their source position", () => {
+    expect(model.maps.createdCount).toBeGreaterThan(100);
+    const site = model.maps.transitionSites.find(
+      (candidate) =>
+        candidate.file?.endsWith("megamorphic.js") === true &&
+        candidate.propertyNames.includes("x")
+    );
+    expect(site).toBeDefined();
+    expect(site?.count).toBeGreaterThanOrEqual(8);
+  });
+
+  // The megamorphic IC's observed maps must resolve to parsed map entries — this
+  // linkage is how get_map will explain which shapes polluted a call site.
+  it("links IC transitions to map entries seen in map events", () => {
+    const site = model.ics.find(
+      (candidate) =>
+        candidate.file?.endsWith("megamorphic.js") === true &&
+        candidate.key === "x"
+    );
+    const known = site?.transitions.filter(({ mapAddress }) =>
+      model.maps.entries.has(mapAddress)
+    );
+    expect(known?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("captures map-details text for later property inspection", () => {
+    const withDetails = [...model.maps.entries.values()].filter(
+      ({ details }) => details?.includes("[Map]") === true
+    );
+    expect(withDetails.length).toBeGreaterThan(100);
+  });
+
   // Events we deliberately do not handle yet must surface in warnings rather than
   // vanish — agents need to know when a log contains data the parser skipped.
   it("counts unhandled commands instead of dropping them silently", () => {
     expect(model.warnings.badLines).toBe(0);
-    expect(Object.keys(model.warnings.unknownCommands)).toEqual(
-      expect.arrayContaining(["map-create", "tick"])
+    const unknown = Object.keys(model.warnings.unknownCommands);
+    // v8-platform and script-source appear in every log with our flag set; tick counts
+    // are sampling-dependent and can be zero on a fast run, so they are not asserted.
+    expect(unknown).toEqual(
+      expect.arrayContaining(["v8-platform", "script-source"])
+    );
+    expect(unknown).not.toEqual(
+      expect.arrayContaining(["map-create", "map", "map-details"])
     );
   });
 });

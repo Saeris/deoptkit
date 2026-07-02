@@ -3,7 +3,9 @@ import type {
   DeoptSite,
   IcSite,
   IcState,
-  LogModel
+  LogModel,
+  MapEntry,
+  MapTransitionSite
 } from "../model/logModel";
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
@@ -67,6 +69,29 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   const codeMap = new CodeMap();
   const icSites = new Map<string, IcSite>();
   const deoptSites = new Map<string, DeoptSite>();
+  let mapsCreated = 0;
+  const mapEntries = new Map<string, MapEntry>();
+  const mapEventCounts: Record<string, number> = {};
+  const transitionSites = new Map<string, MapTransitionSite>();
+
+  const freshMapEntry = (address: string, time: number): MapEntry => ({
+    address,
+    createdAt: time,
+    details: undefined,
+    parent: undefined,
+    subtype: undefined,
+    propertyName: undefined
+  });
+
+  /** Get-or-create: `map`/`map-details` events may reference maps created before logging began. */
+  const upsertMapEntry = (address: string, time: number): MapEntry => {
+    let entry = mapEntries.get(address);
+    if (!entry) {
+      entry = freshMapEntry(address, time);
+      mapEntries.set(address, entry);
+    }
+    return entry;
+  };
 
   const handleIc =
     (type: string) =>
@@ -157,6 +182,43 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       site.lastTime = Math.max(site.lastTime, timestamp);
       site.firstTime = Math.min(site.firstTime, timestamp);
       if (reason && !site.reasons.includes(reason)) site.reasons.push(reason);
+    },
+    "map-create": ([time, address]): void => {
+      mapsCreated += 1;
+      // A create at a seen address means V8 reused it after GC; the fresh entry wins.
+      mapEntries.set(address ?? "", freshMapEntry(address ?? "", Number(time)));
+    },
+    map: ([subtype, time, from, to, pc, line, column, , name]): void => {
+      const kind = subtype ?? "unknown";
+      mapEventCounts[kind] = (mapEventCounts[kind] ?? 0) + 1;
+      const timestamp = Number(time);
+      const entry = upsertMapEntry(to ?? "", timestamp);
+      entry.subtype = kind;
+      entry.propertyName = name === "" ? undefined : name;
+      if (from && from !== "0x000000000000") entry.parent = from;
+
+      const address = BigInt(pc ?? "0");
+      if (address === 0n) return;
+      const code = codeMap.find(address);
+      const siteKey = `${code?.file ?? "?"}|${line}|${column}`;
+      let site = transitionSites.get(siteKey);
+      if (!site) {
+        site = {
+          file: code?.file,
+          functionName: code?.functionName,
+          line: Number(line),
+          column: Number(column),
+          propertyNames: [],
+          count: 0
+        };
+        transitionSites.set(siteKey, site);
+      }
+      site.count += 1;
+      if (name && !site.propertyNames.includes(name))
+        site.propertyNames.push(name);
+    },
+    "map-details": ([time, address, details]): void => {
+      upsertMapEntry(address ?? "", Number(time)).details = details;
     }
   });
 
@@ -169,6 +231,14 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     v8Version,
     ics: [...icSites.values()].sort(worstFirst),
     deopts: [...deoptSites.values()].sort((a, b) => b.count - a.count),
+    maps: {
+      createdCount: mapsCreated,
+      entries: mapEntries,
+      eventCounts: mapEventCounts,
+      transitionSites: [...transitionSites.values()].sort(
+        (a, b) => b.count - a.count
+      )
+    },
     codeEntryCount: codeMap.count,
     warnings: {
       unknownCommands: Object.fromEntries(warnings.unknownCommands),

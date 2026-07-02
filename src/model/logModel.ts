@@ -81,6 +81,42 @@ export interface CodeEntry {
   column: number | undefined;
 }
 
+/** One V8 object map (hidden class) observed in the log. */
+export interface MapEntry {
+  address: string;
+  createdAt: number;
+  /** Raw `map-details` text block, when logged. Parsed lazily by the map tools. */
+  details: string | undefined;
+  /** Address of the map this one transitioned from, when known. */
+  parent: string | undefined;
+  /** Transition subtype that produced this map (Transition, Normalize, ReplaceDescriptors, ...). */
+  subtype: string | undefined;
+  /** Property name added, for `Transition` events. */
+  propertyName: string | undefined;
+}
+
+/** Aggregated map transitions attributed to one source position — the map-churn signal. */
+export interface MapTransitionSite {
+  file: string | undefined;
+  functionName: string | undefined;
+  line: number;
+  column: number;
+  /** Distinct property names added at this site. */
+  propertyNames: string[];
+  /** Total transition events observed here. */
+  count: number;
+}
+
+export interface MapsModel {
+  createdCount: number;
+  /** Map address -> latest entry at that address (V8 reuses addresses after GC). */
+  entries: Map<string, MapEntry>;
+  /** `map` event subtype -> occurrence count. */
+  eventCounts: Record<string, number>;
+  /** Transition sites sorted by descending count. */
+  transitionSites: MapTransitionSite[];
+}
+
 export interface ParserWarnings {
   unknownCommands: Record<string, number>;
   badLines: number;
@@ -91,6 +127,7 @@ export interface LogModel {
   v8Version: string;
   ics: IcSite[];
   deopts: DeoptSite[];
+  maps: MapsModel;
   codeEntryCount: number;
   warnings: ParserWarnings;
 }
