@@ -65,6 +65,18 @@ For library authors (the original Deopt Explorer audience), the lightest-weight 
 
 Ship one exemplary `bench/` in this repo's README and a `docs/recipes.md` section. The fixtures in `fixtures/workloads/` already model the anti-patterns; the recipe shows the pro-pattern.
 
+### Schema-driven input generation (Valibot + Valimock, v1.1)
+
+Hand-writing "realistic, varied input shapes" is the weakest link in the convention above — so derive them instead. A Valibot schema with `v.optional()` fields is a **shape generator**: it encodes exactly which structural variations exist in the domain, and [Valimock](https://github.com/Saeris/valimock) manufactures them. The agent-adoptable pattern becomes mechanical:
+
+1. Pick the hot function; find (or write) the Valibot schema describing its input.
+2. Generate a pool of mocks — **seeded**, so runs are reproducible and CI baselines stable (faker must be seeded; document the incantation in the recipe).
+3. `observed("case", () => fn(mocks[i++ % mocks.length]))` → `profile_run` → `get_findings`.
+
+This subjects the function to the same shape polymorphism production data has (optional fields present/absent, unions taking different arms), which is precisely the pathology class the tool detects. One honest caveat for the recipe: schema-level variety can overstate what a _specific call site_ sees in practice — findings from mocked stress are strong hypotheses, confirmed by checking whether the shapes in `get_map`'s evidence actually co-occur in real traffic.
+
+**Dogfood target:** [Discordkit](https://github.com/discordkit/discordkit) (Valibot schemas for Discord API objects, shape-heavy parsers/serializers) with Valimock as generator — and **Valimock itself as a subject**, since it has a real deopt-regression history (recursive schema walking is a classic churn/megamorphism habitat). The v1.1 graduation exercise: run the full loop on Valimock, land a fix for a real finding verified by `compare_sessions`. Synthetic fixtures prove the machinery; a real library with a perf history proves the product.
+
 ## 6. Framework recipes: drivers, not plugins (v1.2)
 
 Per-framework plugins are the wrong altitude — the frameworks differ only in how you get their request handler into one observable process. Ship **one helper + documented recipes**:
@@ -89,16 +101,25 @@ deopt-mcp ci --update bench/parse.bench.mjs   # accept current findings as basel
 - Runs the same bin, no MCP host needed: the existing `main.ts` grows argv dispatch (`deopt-mcp` with no args = stdio server, unchanged).
 - CI examples for GitHub Actions in the docs; works on any runner because structural signals don't care about noisy neighbors.
 
-## 8. Delivery order
+## 8. Lint-channel integration: ESLint + Oxlint (v1.3)
 
-| Release | Contents                                                                                                          | Rationale                                                        |
-| ------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| v1.1    | harness (`mark`/`observed`), window params on tools, vitest bench preset + `load_manifest`, bench convention docs | Makes observation easy where warm-up already exists              |
-| v1.2    | `deopt-mcp ci` + baselines, `deopt-mcp/serve` + Next/Astro/build recipes                                          | Makes it durable (CI) and applicable to apps, not just libraries |
-| v1.3    | child-process flag propagation research, `get_profile` call trees (top-down/bottom-up), npm publish of the above  | Depth and reach                                                  |
+Structural signals are deterministic **given runtime inputs** — they are not statically derivable from code, because morphism is a property of the data flowing through a site, not the site itself (`return obj.x` is monomorphic or megamorphic depending on callers a linter cannot see). A "static deopt linter" is therefore mostly impossible; what works is splitting the idea in two:
 
-## 9. Open questions
+1. **Findings as diagnostics (the valuable half).** Observation runs (bench or `deopt-mcp ci`) write `.deopt/findings.json`; a lint rule (`deopt-mcp/report-findings`) reads it and emits each finding as a warning at its `original` source position. Findings then flow through the channel developers and agents already consume — editor squiggles, `eslint .` output, CI annotations, LSP diagnostics — with the explanation and suggested fix in the message. Oxlint's JS-plugin support is ESLint-rule-API compatible, so one implementation serves both. Staleness handling: the rule includes the observation timestamp and goes silent (or downgrades to info) when the findings file is older than the source file it annotates.
+2. **A few honestly-static heuristic rules (the modest half).** Only patterns visible in code alone: `delete obj.prop` on non-dictionary-intended objects, conditional property assignment in constructors/factories, inconsistent property order across literals of the same conceptual type. These ship as **suggestions, not auto-fixes** — the one plausible codemod is map-churn normalization (rewrite conditional assignments to unconditional fixed-order initialization with `null`/`undefined` defaults), and even that changes enumerable keys, so it stays a suggestion an agent or human applies deliberately.
+
+## 9. Delivery order
+
+| Release | Contents                                                                                                                                                                            | Rationale                                                        |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| v1.1    | harness (`mark`/`observed`), window params on tools, vitest bench preset + `load_manifest`, bench convention + schema-driven (Valimock) recipe docs; dogfood on Valimock/Discordkit | Makes observation easy where warm-up already exists              |
+| v1.2    | `deopt-mcp ci` + baselines, `deopt-mcp/serve` + Next/Astro/build recipes                                                                                                            | Makes it durable (CI) and applicable to apps, not just libraries |
+| v1.3    | findings-as-diagnostics lint rule (ESLint/Oxlint) + static heuristic rules, child-process flag propagation research, `get_profile` call trees, npm publish of the above             | Depth and reach                                                  |
+
+## 10. Open questions
 
 1. Marker mechanism: confirm `eval`-named functions reliably produce `code-creation` events across tiers/versions (they should — lazy compilation on first call); pick the fallback only if not.
 2. Should `deopt-mcp ci` also run vitest-bench manifests, or only plain bench scripts? (Leaning: plain scripts first; manifest support when the preset stabilizes.)
 3. Baseline granularity: per-bench-file vs one repo-wide file (leaning per-file, mirroring snapshot conventions).
+4. Does Valimock's current API accept a caller-provided seeded faker instance? If not, that is the first upstream PR the dogfood exercise produces.
+5. Lint staleness policy: silent vs info-level when findings predate the file's mtime (leaning info-level so the signal's existence stays discoverable).
