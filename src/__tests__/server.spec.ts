@@ -97,9 +97,7 @@ describe("deopt-mcp server", () => {
       expect(textPayload(result).error).toMatch(/does not look like a V8 log/u);
     });
 
-    // Phase 0 stub contract: recognized V8 logs must fail loudly (not silently create an
-    // empty session). Phase 1 replaces this expectation with a parsed-session assertion.
-    it("recognizes a V8 log but reports parsing as unimplemented", async () => {
+    it("parses a minimal V8 log into a session and reports it in list_sessions", async () => {
       const path = join(fixtureDir, "real.v8.log");
       await writeFile(
         path,
@@ -109,8 +107,22 @@ describe("deopt-mcp server", () => {
         name: "load_log",
         arguments: { path }
       });
-      expect(result.isError).toBe(true);
-      expect(textPayload(result).error).toMatch(/not implemented yet/u);
+      expect(result.isError ?? false).toBe(false);
+      const payload = textPayload(result);
+      expect(payload.sessionId).toBe("s1");
+      expect(payload.v8Version).toBe("13.6.233.10.-node.18.0");
+      expect(payload.counts).toEqual({
+        icSites: 0,
+        deoptSites: 0,
+        codeEntries: 0
+      });
+
+      const sessions = await client.callTool({
+        name: "list_sessions",
+        arguments: {}
+      });
+      const listed = textPayload(sessions).sessions as { id: string }[];
+      expect(listed.map(({ id }) => id)).toEqual(["s1"]);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { open } from "node:fs/promises";
 import * as v from "valibot";
+import { parseLog } from "../parser/parseLog";
 import { defineTool, jsonResult } from "./defineTool";
 
 /** Bytes to sniff from the head of the file when checking it looks like a V8 log. */
@@ -12,14 +13,14 @@ export const loadLog = defineTool({
   name: "load_log",
   description:
     "Parse a V8 log file (v8.log, produced by `node --prof --log-deopt --log-ic --log-maps ...`) " +
-    "into a session for analysis. Returns the new session id and summary counts.",
+    "into a session for analysis. Returns the new session id, summary counts, and parser warnings.",
   schema: v.object({
     path: v.pipe(
       v.string(),
       v.description("Absolute path to the v8.log file to load")
     )
   }),
-  handler: async ({ path }) => {
+  handler: async ({ path }, ctx) => {
     let head: string;
     try {
       const file = await open(path, "r");
@@ -48,13 +49,17 @@ export const loadLog = defineTool({
         { isError: true }
       );
     }
-    return jsonResult(
-      {
-        error:
-          "V8 log parsing is not implemented yet (Phase 1 of docs/SPEC.md). " +
-          "The file exists and looks like a V8 log, but no session was created."
+    const model = await parseLog(path);
+    const session = ctx.sessions.add(path, model);
+    return jsonResult({
+      sessionId: session.id,
+      v8Version: model.v8Version,
+      counts: {
+        icSites: model.ics.length,
+        deoptSites: model.deopts.length,
+        codeEntries: model.codeEntryCount
       },
-      { isError: true }
-    );
+      warnings: model.warnings
+    });
   }
 });
