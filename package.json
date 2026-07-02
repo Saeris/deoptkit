@@ -1,0 +1,56 @@
+{
+  "name": "library-template",
+  "version": "0.0.0",
+  "description": "A minimal repo configured with modern JavaScript tooling to scaffold new libraries",
+  "keywords": [],
+  "homepage": "https://github.com/Saeris/library-template#readme",
+  "license": "MIT",
+  "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Saeris/library-template.git"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": {
+        "development": "./src/index.ts",
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "ci": "vp check && vp test",
+    "build": "vp pack",
+    "check": "vp check",
+    "format": "vp check --fix",
+    "test": "vp test --fileParallelism"
+  },
+  "devDependencies": {
+    "@saeris/configs": "^1.0.0",
+    "@types/node": "^25.9.1",
+    "@varlock/bumpy": "^1.7.0",
+    "@vitest/coverage-v8": "^4.1.6",
+    "typescript": "6.0.3",
+    "vite-plus": "latest",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+  },
+  "resolutions": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "yarn@4.16.0"
+}
