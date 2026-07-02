@@ -137,6 +137,17 @@ export interface ProfileModel {
   functions: FunctionTicks[];
 }
 
+/** A function observed via `code-creation`, indexed by source identity. */
+export interface FunctionInfo {
+  functionName: string;
+  file: string;
+  line: number;
+  column: number;
+  /** code-creation kind numbers observed — each optimization tier logs its own creation. */
+  tiers: number[];
+  codeCreations: number;
+}
+
 export interface ParserWarnings {
   unknownCommands: Record<string, number>;
   badLines: number;
@@ -149,6 +160,10 @@ export interface LogModel {
   deopts: DeoptSite[];
   maps: MapsModel;
   profile: ProfileModel;
+  /** Script URL -> full source text, from `--log-source-code`. */
+  scripts: Map<string, string>;
+  /** Functions seen in code-creation events, for lookup by name/position. */
+  functionIndex: FunctionInfo[];
   codeEntryCount: number;
   warnings: ParserWarnings;
 }

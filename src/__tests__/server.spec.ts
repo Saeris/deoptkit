@@ -47,6 +47,7 @@ describe("deopt-mcp server", () => {
       expect([...byName.keys()].toSorted()).toEqual([
         "compare_sessions",
         "get_findings",
+        "get_function",
         "get_map",
         "list_deopts",
         "list_functions",
@@ -137,6 +138,27 @@ describe("deopt-mcp server", () => {
           (found) =>
             found.kind === "megamorphic-ic" &&
             found.file.endsWith("map-churn.js")
+        )
+      ).toBe(true);
+
+      // Drill-down: the annotated snippet marks the polluted read without any file I/O.
+      const fn = await client.callTool({
+        name: "get_function",
+        arguments: {
+          sessionId: String(payload.sessionId),
+          file: "map-churn.js",
+          functionName: "readId"
+        }
+      });
+      expect(fn.isError ?? false).toBe(false);
+      const detail = textPayload(fn) as unknown as {
+        snippet: { text: string };
+        annotations: { note: string }[];
+      };
+      expect(detail.snippet.text).toContain("return record.id;");
+      expect(
+        detail.annotations.some((annotation) =>
+          annotation.note.includes("megamorphic")
         )
       ).toBe(true);
     }, 90_000);

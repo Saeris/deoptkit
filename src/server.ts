@@ -15,6 +15,7 @@ import {
 } from "./tools/defineTool";
 import { compareSessionsTool } from "./tools/compareSessions";
 import { getFindings } from "./tools/getFindings";
+import { getFunction } from "./tools/getFunction";
 import { getMap } from "./tools/getMap";
 import { listDeopts } from "./tools/listDeopts";
 import { listFunctions } from "./tools/listFunctions";
@@ -33,6 +34,7 @@ const tools: RegisteredTool[] = [
   listDeopts,
   listFunctions,
   getMap,
+  getFunction,
   compareSessionsTool
 ];
 

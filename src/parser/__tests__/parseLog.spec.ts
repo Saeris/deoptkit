@@ -59,6 +59,22 @@ describe("parseLog on a real generated V8 log", () => {
     expect(model.codeEntryCount).toBeGreaterThan(100);
   });
 
+  // get_function serves annotated snippets straight from the log's embedded sources,
+  // so agents never need a separate file read (or the original file at all).
+  it("captures script sources and a function index", () => {
+    const url = [...model.scripts.keys()].find((candidate) =>
+      candidate.endsWith("megamorphic.js")
+    );
+    expect(url).toBeDefined();
+    expect(model.scripts.get(url ?? "")).toContain("return obj.x;");
+    const fn = model.functionIndex.find(
+      (info) => info.functionName === "getX" && info.file === url
+    );
+    expect(fn?.line).toBe(6);
+    // The hot loop drives getX through multiple optimization tiers.
+    expect(fn?.tiers.length).toBeGreaterThanOrEqual(2);
+  });
+
   // Each shape literal in the workload adds `x` at a different offset, so V8 records
   // a map Transition per shape, all attributed to the literal site. Losing this means
   // losing the map-churn signal that explains WHY a site went megamorphic.
@@ -118,13 +134,16 @@ describe("parseLog on a real generated V8 log", () => {
   it("counts unhandled commands instead of dropping them silently", () => {
     expect(model.warnings.badLines).toBe(0);
     const unknown = Object.keys(model.warnings.unknownCommands);
-    // v8-platform and script-source appear in every log with our flag set; tick counts
-    // are sampling-dependent and can be zero on a fast run, so they are not asserted.
-    expect(unknown).toEqual(
-      expect.arrayContaining(["v8-platform", "script-source"])
-    );
+    // v8-platform appears in every log; tick counts are sampling-dependent and can be
+    // zero on a fast run, so they are not asserted.
+    expect(unknown).toEqual(expect.arrayContaining(["v8-platform"]));
     expect(unknown).not.toEqual(
-      expect.arrayContaining(["map-create", "map", "map-details"])
+      expect.arrayContaining([
+        "map-create",
+        "map",
+        "map-details",
+        "script-source"
+      ])
     );
   });
 });

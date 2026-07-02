@@ -2,6 +2,7 @@ import type {
   CodeEntry,
   DeoptKind,
   DeoptSite,
+  FunctionInfo,
   FunctionTicks,
   IcSite,
   IcState,
@@ -95,6 +96,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   let tickCount = 0;
   const vmStates: Record<string, number> = {};
   const functionTicks = new Map<string, FunctionTicks>();
+  const scripts = new Map<string, string>();
+  const functionIndex = new Map<string, FunctionInfo>();
 
   /** Merge all optimization tiers of a function into one row keyed by source identity. */
   const tickRowFor = (entry: CodeEntry): FunctionTicks => {
@@ -188,13 +191,35 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     "v8-version": (args): void => {
       v8Version = args.filter((field) => field !== "").join(".");
     },
-    "code-creation": ([kind, _kindNum, _time, start, size, name]): void => {
-      codeMap.add({
+    "code-creation": ([kind, kindNum, _time, start, size, name]): void => {
+      const entry = {
         start: BigInt(start ?? "0"),
         size: Number(size),
         kind: kind ?? "unknown",
         ...splitEntryName(name ?? "")
-      });
+      };
+      codeMap.add(entry);
+      if (kind !== "JS" || entry.file === undefined || entry.line === undefined)
+        return;
+      const key = `${entry.functionName}|${entry.file}|${entry.line}|${entry.column}`;
+      let info = functionIndex.get(key);
+      if (!info) {
+        info = {
+          functionName: entry.functionName,
+          file: entry.file,
+          line: entry.line,
+          column: entry.column ?? 0,
+          tiers: [],
+          codeCreations: 0
+        };
+        functionIndex.set(key, info);
+      }
+      info.codeCreations += 1;
+      const tier = Number(kindNum);
+      if (!info.tiers.includes(tier)) info.tiers.push(tier);
+    },
+    "script-source": ([, url, source]): void => {
+      if (url !== undefined && source !== undefined) scripts.set(url, source);
     },
     "code-deopt": ([
       time,
@@ -331,6 +356,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
         (a, b) => b.selfTicks - a.selfTicks
       )
     },
+    scripts,
+    functionIndex: [...functionIndex.values()],
     codeEntryCount: codeMap.count,
     warnings: {
       unknownCommands: Object.fromEntries(warnings.unknownCommands),
