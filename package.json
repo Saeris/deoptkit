@@ -23,7 +23,8 @@
     "url": "https://github.com/Saeris/deoptkit.git"
   },
   "files": [
-    "dist/**/*"
+    "dist/**/*",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "type": "module",
   "sideEffects": false,

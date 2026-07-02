@@ -18,24 +18,20 @@ Pre-release. The **MCP server** — the kit's first surface — works end-to-end
 
 ## 📦 Setup
 
-Not yet on npm. From a checkout:
-
-```bash
-vp install && vp pack
-```
-
-Then register the stdio server with your MCP host. For Claude Code, in `.mcp.json`:
+Register the stdio server with your MCP host. For Claude Code, in `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "deopt": {
-      "command": "node",
-      "args": ["<path-to-checkout>/dist/main.mjs"]
+      "command": "npx",
+      "args": ["-y", "deoptkit"]
     }
   }
 }
 ```
+
+Working from a checkout instead: `vp install && vp pack`, then point `command` at `node <path-to-checkout>/dist/main.mjs`.
 
 ## 🔧 The workflow
 
