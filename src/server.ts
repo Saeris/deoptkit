@@ -20,11 +20,13 @@ import { listFunctions } from "./tools/listFunctions";
 import { listIcs } from "./tools/listIcs";
 import { listSessions } from "./tools/listSessions";
 import { loadLog } from "./tools/loadLog";
+import { profileRun } from "./tools/profileRun";
 import manifest from "../package.json" with { type: "json" };
 
 const tools: RegisteredTool[] = [
   listSessions,
   loadLog,
+  profileRun,
   getFindings,
   listIcs,
   listDeopts,

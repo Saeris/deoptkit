@@ -51,7 +51,8 @@ describe("deopt-mcp server", () => {
         "list_functions",
         "list_ics",
         "list_sessions",
-        "load_log"
+        "load_log",
+        "profile_run"
       ]);
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe("object");
@@ -102,6 +103,43 @@ describe("deopt-mcp server", () => {
       expect(textPayload(result).error).toMatch(/does not look like a V8 log/u);
     });
 
+    // The end-to-end promise: run a workload with zero flag knowledge, get ranked
+    // findings that name its deliberate pathology.
+    it("profile_run profiles a workload and get_findings names its pathology", async () => {
+      const workload = join(
+        import.meta.dirname,
+        "..",
+        "..",
+        "fixtures",
+        "workloads",
+        "map-churn.js"
+      );
+      const result = await client.callTool({
+        name: "profile_run",
+        arguments: { command: ["node", workload], timeoutMs: 60_000 }
+      });
+      expect(result.isError ?? false).toBe(false);
+      const payload = textPayload(result);
+      expect((payload.counts as { icSites: number }).icSites).toBeGreaterThan(
+        0
+      );
+
+      const findings = await client.callTool({
+        name: "get_findings",
+        arguments: { sessionId: String(payload.sessionId) }
+      });
+      const { items } = textPayload(findings) as unknown as {
+        items: { kind: string; file: string }[];
+      };
+      expect(
+        items.some(
+          (found) =>
+            found.kind === "megamorphic-ic" &&
+            found.file.endsWith("map-churn.js")
+        )
+      ).toBe(true);
+    }, 90_000);
+
     it("reports unknown sessions as errors on analysis tools", async () => {
       const result = await client.callTool({
         name: "get_findings",
@@ -123,7 +161,7 @@ describe("deopt-mcp server", () => {
       });
       expect(result.isError ?? false).toBe(false);
       const payload = textPayload(result);
-      expect(payload.sessionId).toBe("s1");
+      expect(payload.sessionId).toMatch(/^s\d+$/u);
       expect(payload.v8Version).toBe("13.6.233.10.-node.18.0");
       expect(payload.counts).toEqual({
         icSites: 0,
@@ -139,7 +177,7 @@ describe("deopt-mcp server", () => {
         arguments: {}
       });
       const listed = textPayload(sessions).sessions as { id: string }[];
-      expect(listed.map(({ id }) => id)).toEqual(["s1"]);
+      expect(listed.map(({ id }) => id)).toContain(payload.sessionId);
     });
   });
 });
