@@ -45,6 +45,7 @@ describe("deopt-mcp server", () => {
       const { tools } = await client.listTools();
       const byName = new Map(tools.map((tool) => [tool.name, tool]));
       expect([...byName.keys()].toSorted()).toEqual([
+        "compare_sessions",
         "get_findings",
         "get_map",
         "list_deopts",

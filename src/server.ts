@@ -13,6 +13,7 @@ import {
   type RegisteredTool,
   type ToolContext
 } from "./tools/defineTool";
+import { compareSessionsTool } from "./tools/compareSessions";
 import { getFindings } from "./tools/getFindings";
 import { getMap } from "./tools/getMap";
 import { listDeopts } from "./tools/listDeopts";
@@ -31,7 +32,8 @@ const tools: RegisteredTool[] = [
   listIcs,
   listDeopts,
   listFunctions,
-  getMap
+  getMap,
+  compareSessionsTool
 ];
 
 export const createServer = (): Server => {
