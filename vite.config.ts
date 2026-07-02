@@ -7,7 +7,11 @@ export default defineConfig({
   fmt,
   // ── Builds (tsdown) ─────────────────────────────────────────────────
   pack: {
-    entry: [manifest.exports["."].import.development, "./src/main.ts"],
+    entry: {
+      index: manifest.exports["."].import.development,
+      main: "./src/main.ts",
+      harness: "./src/harness/index.ts"
+    },
     clean: true,
     format: [`esm`],
     dts: true,

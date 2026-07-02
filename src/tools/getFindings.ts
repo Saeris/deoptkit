@@ -1,11 +1,14 @@
 import * as v from "valibot";
 import { computeFindings } from "../analysis/findings";
+import { applyWindow, resolveWindow } from "../analysis/window";
 import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
+  fromMarkSchema,
   limitSchema,
   paginate,
   sessionIdSchema,
+  toMarkSchema,
   unknownSessionError
 } from "./shared";
 
@@ -41,13 +44,24 @@ export const getFindings = defineTool({
         v.description("Only include findings at or above this severity")
       )
     ),
+    fromMark: fromMarkSchema,
+    toMark: toMarkSchema,
     limit: limitSchema
   }),
-  handler: ({ sessionId, kinds, severityMin, limit }, ctx) => {
+  handler: (
+    { sessionId, kinds, severityMin, fromMark, toMark, limit },
+    ctx
+  ) => {
     const session = ctx.sessions.get(sessionId);
     if (!session) return unknownSessionError(sessionId);
+    let model = session.model;
+    if (fromMark !== undefined || toMark !== undefined) {
+      const window = resolveWindow(model, { fromMark, toMark });
+      if ("error" in window) return jsonResult(window, { isError: true });
+      model = applyWindow(model, window);
+    }
     const resolver = resolverFor(session);
-    const findings = computeFindings(session.model)
+    const findings = computeFindings(model)
       .filter(
         (candidate) =>
           (kinds === undefined || kinds.includes(candidate.kind)) &&

@@ -126,7 +126,7 @@ Static heuristic lint rules (conditional constructor assignment, `delete`, prope
 
 ## 10. Open questions
 
-1. Marker mechanism: confirm `eval`-named functions reliably produce `code-creation` events across tiers/versions (they should — lazy compilation on first call); pick the fallback only if not.
+1. ~~Marker mechanism~~ **Resolved:** validated on V8 14.6 — eval-named no-ops log `code-creation` events with µs timestamps and an empty file ref (` :1:38`); the parser keys markers on the name prefix and keeps them out of the code map and function index.
 2. Should `deoptkit ci` also run vitest-bench manifests, or only plain bench scripts? (Leaning: plain scripts first; manifest support when the preset stabilizes.)
 3. Baseline granularity: per-bench-file vs one repo-wide file (leaning per-file, mirroring snapshot conventions).
 4. Does Valimock's current API accept a caller-provided seeded faker instance? If not, that is the first upstream PR the dogfood exercise produces.

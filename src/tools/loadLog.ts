@@ -62,6 +62,7 @@ export const loadLog = defineTool({
         profileTicks: model.profile.tickCount,
         codeEntries: model.codeEntryCount
       },
+      markers: [...new Set(model.markers.map(({ label }) => label))],
       warnings: model.warnings
     });
   }

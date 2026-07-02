@@ -173,7 +173,7 @@ export const getFunction = defineTool({
           transitionCount: transitions.length
         })
       ),
-      deoptSites
+      deoptSites: deoptSites.map(({ events: _events, ...site }) => site)
     });
   }
 });

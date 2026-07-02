@@ -33,6 +33,24 @@ export const fileFilterSchema = v.optional(
   )
 );
 
+export const fromMarkSchema = v.optional(
+  v.pipe(
+    v.string(),
+    v.description(
+      "Window start: the first occurrence of this harness marker label (from deoptkit/harness mark/observed)"
+    )
+  )
+);
+
+export const toMarkSchema = v.optional(
+  v.pipe(
+    v.string(),
+    v.description(
+      "Window end: the last occurrence of this harness marker label"
+    )
+  )
+);
+
 export const unknownSessionError = (sessionId: string): CallToolResult =>
   jsonResult(
     {

@@ -37,6 +37,13 @@
         "default": "./dist/index.mjs"
       }
     },
+    "./harness": {
+      "import": {
+        "development": "./src/harness/index.ts",
+        "types": "./dist/harness.d.mts",
+        "default": "./dist/harness.mjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

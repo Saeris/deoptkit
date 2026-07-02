@@ -15,6 +15,7 @@ const emptyModel = (): LogModel => ({
   profile: { tickCount: 0, vmStates: {}, functions: [] },
   scripts: new Map(),
   functionIndex: [],
+  markers: [],
   codeEntryCount: 0,
   warnings: { unknownCommands: {}, badLines: 0 }
 });

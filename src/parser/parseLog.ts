@@ -8,7 +8,8 @@ import type {
   IcState,
   LogModel,
   MapEntry,
-  MapTransitionSite
+  MapTransitionSite,
+  Marker
 } from "../model/logModel";
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
@@ -30,6 +31,12 @@ const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
 
 /** Deopt location field, e.g. `<file:///a/b.js:23:1>`. */
 const DEOPT_LOCATION_RE = /^<(?<file>.+):(?<line>\d+):(?<column>\d+)>$/u;
+
+/**
+ * Harness marker functions from `deoptkit/harness`. Eval'd functions carry an empty
+ * file ref (` :1:38`), so the label ends at the last `__` before the space or end.
+ */
+const MARKER_NAME_RE = /^__DEOPT_MARK__(?<label>.+)__(?: |$)/u;
 
 /** V8 StateTag order as logged in tick events' vmstate field. */
 const VM_STATES = [
@@ -98,6 +105,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   const functionTicks = new Map<string, FunctionTicks>();
   const scripts = new Map<string, string>();
   const functionIndex = new Map<string, FunctionInfo>();
+  const markers: Marker[] = [];
 
   /** Merge all optimization tiers of a function into one row keyed by source identity. */
   const tickRowFor = (entry: CodeEntry): FunctionTicks => {
@@ -191,7 +199,17 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     "v8-version": (args): void => {
       v8Version = args.filter((field) => field !== "").join(".");
     },
-    "code-creation": ([kind, kindNum, _time, start, size, name]): void => {
+    "code-creation": ([kind, kindNum, time, start, size, name]): void => {
+      const marker = MARKER_NAME_RE.exec(name ?? "");
+      if (marker?.groups) {
+        // Harness markers are 2-byte eval'd no-ops; keep them out of the code map
+        // and function index so they never pollute attribution or findings.
+        markers.push({
+          label: marker.groups["label"] ?? "",
+          time: Number(time)
+        });
+        return;
+      }
       const entry = {
         start: BigInt(start ?? "0"),
         size: Number(size),
@@ -250,13 +268,15 @@ export const parseLog = async (path: string): Promise<LogModel> => {
           reasons: [],
           count: 0,
           firstTime: timestamp,
-          lastTime: timestamp
+          lastTime: timestamp,
+          events: []
         };
         deoptSites.set(siteKey, site);
       }
       site.count += 1;
       site.lastTime = Math.max(site.lastTime, timestamp);
       site.firstTime = Math.min(site.firstTime, timestamp);
+      site.events.push({ time: timestamp, reason: reason ?? "" });
       if (reason && !site.reasons.includes(reason)) site.reasons.push(reason);
     },
     "map-create": ([time, address]): void => {
@@ -285,11 +305,16 @@ export const parseLog = async (path: string): Promise<LogModel> => {
           line: Number(line),
           column: Number(column),
           propertyNames: [],
-          count: 0
+          count: 0,
+          events: []
         };
         transitionSites.set(siteKey, site);
       }
       site.count += 1;
+      site.events.push({
+        time: timestamp,
+        propertyName: name === "" ? undefined : name
+      });
       if (name && !site.propertyNames.includes(name))
         site.propertyNames.push(name);
     },
@@ -358,6 +383,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     },
     scripts,
     functionIndex: [...functionIndex.values()],
+    markers,
     codeEntryCount: codeMap.count,
     warnings: {
       unknownCommands: Object.fromEntries(warnings.unknownCommands),

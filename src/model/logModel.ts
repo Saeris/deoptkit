@@ -56,6 +56,11 @@ export interface IcSite {
 
 export type DeoptKind = "eager" | "lazy" | "soft" | "unknown";
 
+export interface DeoptEvent {
+  time: number;
+  reason: string;
+}
+
 /** All deoptimizations observed at one source position. */
 export interface DeoptSite {
   file: string;
@@ -67,6 +72,8 @@ export interface DeoptSite {
   count: number;
   firstTime: number;
   lastTime: number;
+  /** Individual deopt occurrences, for time-window filtering. */
+  events: DeoptEvent[];
 }
 
 /** A code object from a `code-creation` event; ranges let ICs and ticks resolve to source. */
@@ -95,6 +102,11 @@ export interface MapEntry {
   propertyName: string | undefined;
 }
 
+export interface MapTransitionEvent {
+  time: number;
+  propertyName: string | undefined;
+}
+
 /** Aggregated map transitions attributed to one source position — the map-churn signal. */
 export interface MapTransitionSite {
   file: string | undefined;
@@ -105,6 +117,8 @@ export interface MapTransitionSite {
   propertyNames: string[];
   /** Total transition events observed here. */
   count: number;
+  /** Individual transition occurrences, for time-window filtering. */
+  events: MapTransitionEvent[];
 }
 
 export interface MapsModel {
@@ -153,6 +167,12 @@ export interface ParserWarnings {
   badLines: number;
 }
 
+/** An in-band timestamp marker planted by `deoptkit/harness`'s `mark()`. */
+export interface Marker {
+  label: string;
+  time: number;
+}
+
 /** The parsed form of one v8.log — everything the analysis tools query. */
 export interface LogModel {
   v8Version: string;
@@ -164,6 +184,8 @@ export interface LogModel {
   scripts: Map<string, string>;
   /** Functions seen in code-creation events, for lookup by name/position. */
   functionIndex: FunctionInfo[];
+  /** Harness markers in log order, for fromMark/toMark window filtering. */
+  markers: Marker[];
   codeEntryCount: number;
   warnings: ParserWarnings;
 }
