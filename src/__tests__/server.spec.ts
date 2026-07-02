@@ -116,6 +116,7 @@ describe("deopt-mcp server", () => {
         deoptSites: 0,
         mapsCreated: 0,
         mapTransitionSites: 0,
+        profileTicks: 0,
         codeEntries: 0
       });
 

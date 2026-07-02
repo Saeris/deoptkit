@@ -57,4 +57,23 @@ export class CodeMap {
     const entry = this.#entries[index];
     return address < entry.start + BigInt(entry.size) ? entry : undefined;
   }
+
+  /** GC moved a code object: re-index the entry starting exactly at `from`. */
+  move(from: bigint, to: bigint): void {
+    const index = this.#indexBefore(from);
+    if (index < 0) return;
+    const entry = this.#entries[index];
+    if (entry.start !== from) return;
+    this.#entries.splice(index, 1);
+    this.#count -= 1; // add() re-counts it
+    this.add({ ...entry, start: to });
+  }
+
+  /** A code object was collected: drop the entry starting exactly at `address`. */
+  delete(address: bigint): void {
+    const index = this.#indexBefore(address);
+    if (index >= 0 && this.#entries[index].start === address) {
+      this.#entries.splice(index, 1);
+    }
+  }
 }

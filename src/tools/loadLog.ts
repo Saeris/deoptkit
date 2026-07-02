@@ -59,6 +59,7 @@ export const loadLog = defineTool({
         deoptSites: model.deopts.length,
         mapsCreated: model.maps.createdCount,
         mapTransitionSites: model.maps.transitionSites.length,
+        profileTicks: model.profile.tickCount,
         codeEntries: model.codeEntryCount
       },
       warnings: model.warnings

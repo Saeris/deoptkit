@@ -19,8 +19,10 @@ const shapes = [
   { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, x: 8 }
 ];
 
+// Enough iterations (~1s) for the profiler to record dozens of ticks even on Windows,
+// where timer granularity caps --prof sampling at roughly 15ms per sample.
 let sum = 0;
-for (let i = 0; i < 1e6; i++) {
+for (let i = 0; i < 2e8; i++) {
   sum += getX(shapes[i % shapes.length]);
 }
 // Observable sink so the loop cannot be dead-code eliminated (never throws).

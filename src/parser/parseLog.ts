@@ -1,6 +1,8 @@
 import type {
+  CodeEntry,
   DeoptKind,
   DeoptSite,
+  FunctionTicks,
   IcSite,
   IcState,
   LogModel,
@@ -27,6 +29,23 @@ const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
 
 /** Deopt location field, e.g. `<file:///a/b.js:23:1>`. */
 const DEOPT_LOCATION_RE = /^<(?<file>.+):(?<line>\d+):(?<column>\d+)>$/u;
+
+/** V8 StateTag order as logged in tick events' vmstate field. */
+const VM_STATES = [
+  "js",
+  "gc",
+  "parser",
+  "bytecode_compiler",
+  "compiler",
+  "other",
+  "external",
+  "atomics_wait",
+  "idle",
+  "logging"
+] as const;
+
+const vmStateLabel = (raw: string | undefined): string =>
+  VM_STATES[Number(raw)] ?? `state${raw}`;
 
 const splitEntryName = (
   name: string
@@ -73,6 +92,38 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   const mapEntries = new Map<string, MapEntry>();
   const mapEventCounts: Record<string, number> = {};
   const transitionSites = new Map<string, MapTransitionSite>();
+  let tickCount = 0;
+  const vmStates: Record<string, number> = {};
+  const functionTicks = new Map<string, FunctionTicks>();
+
+  /** Merge all optimization tiers of a function into one row keyed by source identity. */
+  const tickRowFor = (entry: CodeEntry): FunctionTicks => {
+    const key = `${entry.functionName}|${entry.file}|${entry.line}|${entry.column}`;
+    let row = functionTicks.get(key);
+    if (!row) {
+      row = {
+        functionName: entry.functionName,
+        file: entry.file,
+        line: entry.line,
+        column: entry.column,
+        selfTicks: 0,
+        totalTicks: 0
+      };
+      functionTicks.set(key, row);
+    }
+    return row;
+  };
+
+  /** Stack fields are absolute (`0x...`) or relative (`+n`/`-n`) to the previous frame. */
+  const parseStackAddress = (
+    field: string,
+    previous: bigint
+  ): bigint | undefined => {
+    if (field.startsWith("0x") || field.startsWith("0X")) return BigInt(field);
+    if (field.startsWith("+") || field.startsWith("-"))
+      return previous + BigInt(field);
+    return undefined;
+  };
 
   const freshMapEntry = (address: string, time: number): MapEntry => ({
     address,
@@ -219,6 +270,40 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     },
     "map-details": ([time, address, details]): void => {
       upsertMapEntry(address ?? "", Number(time)).details = details;
+    },
+    tick: ([
+      pc,
+      _time,
+      _isExternal,
+      _tosOrExternal,
+      vmState,
+      ...stack
+    ]): void => {
+      tickCount += 1;
+      const state = vmStateLabel(vmState);
+      vmStates[state] = (vmStates[state] ?? 0) + 1;
+
+      let previous = BigInt(pc ?? "0");
+      const top = codeMap.find(previous);
+      if (top) tickRowFor(top).selfTicks += 1;
+
+      // Total ticks count each function once per sample, however often it recurs.
+      const onStack = new Set<FunctionTicks>();
+      if (top) onStack.add(tickRowFor(top));
+      for (const field of stack) {
+        const address = parseStackAddress(field ?? "", previous);
+        if (address === undefined) continue;
+        previous = address;
+        const entry = codeMap.find(address);
+        if (entry) onStack.add(tickRowFor(entry));
+      }
+      for (const row of onStack) row.totalTicks += 1;
+    },
+    "code-move": ([from, to]): void => {
+      codeMap.move(BigInt(from ?? "0"), BigInt(to ?? "0"));
+    },
+    "code-delete": ([address]): void => {
+      codeMap.delete(BigInt(address ?? "0"));
     }
   });
 
@@ -237,6 +322,13 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       eventCounts: mapEventCounts,
       transitionSites: [...transitionSites.values()].sort(
         (a, b) => b.count - a.count
+      )
+    },
+    profile: {
+      tickCount,
+      vmStates,
+      functions: [...functionTicks.values()].sort(
+        (a, b) => b.selfTicks - a.selfTicks
       )
     },
     codeEntryCount: codeMap.count,

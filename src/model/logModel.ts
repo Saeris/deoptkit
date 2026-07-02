@@ -117,6 +117,26 @@ export interface MapsModel {
   transitionSites: MapTransitionSite[];
 }
 
+/** CPU samples aggregated per function (all optimization tiers merged by source position). */
+export interface FunctionTicks {
+  functionName: string;
+  file: string | undefined;
+  line: number | undefined;
+  column: number | undefined;
+  /** Samples where this function was at the top of the stack. */
+  selfTicks: number;
+  /** Samples where this function was anywhere on the stack. */
+  totalTicks: number;
+}
+
+export interface ProfileModel {
+  tickCount: number;
+  /** Sample counts by VM state (js, gc, compiler, idle, ...). */
+  vmStates: Record<string, number>;
+  /** Sorted by descending selfTicks. */
+  functions: FunctionTicks[];
+}
+
 export interface ParserWarnings {
   unknownCommands: Record<string, number>;
   badLines: number;
@@ -128,6 +148,7 @@ export interface LogModel {
   ics: IcSite[];
   deopts: DeoptSite[];
   maps: MapsModel;
+  profile: ProfileModel;
   codeEntryCount: number;
   warnings: ParserWarnings;
 }

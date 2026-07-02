@@ -130,6 +130,25 @@ describe("parseLog on a real generated V8 log", () => {
     expect(withDetails.length).toBeGreaterThan(100);
   });
 
+  // The workload spends ~1s inside its hot loop, so the profiler must attribute
+  // meaningful self time to code in megamorphic.js — the signal severity ranking
+  // uses to weight megamorphic ICs by how hot their surroundings actually are.
+  it("attributes profiler self ticks to the hot workload code", () => {
+    // Windows caps --prof sampling at ~15ms/sample, so thresholds stay loose.
+    expect(model.profile.tickCount).toBeGreaterThan(5);
+    const total = Object.values(model.profile.vmStates).reduce(
+      (a, b) => a + b,
+      0
+    );
+    expect(total).toBe(model.profile.tickCount);
+    const hot = model.profile.functions.find(
+      (row) =>
+        row.file?.endsWith("megamorphic.js") === true && row.selfTicks > 0
+    );
+    expect(hot).toBeDefined();
+    expect(hot?.totalTicks).toBeGreaterThanOrEqual(hot?.selfTicks ?? 0);
+  });
+
   // Events we deliberately do not handle yet must surface in warnings rather than
   // vanish — agents need to know when a log contains data the parser skipped.
   it("counts unhandled commands instead of dropping them silently", () => {
