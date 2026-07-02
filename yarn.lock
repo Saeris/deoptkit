@@ -966,6 +966,11 @@ __metadata:
     valibot: "npm:^1.4.2"
     vite-plus: "npm:latest"
     vitest: "npm:@voidzero-dev/vite-plus-test@latest"
+  peerDependencies:
+    vitest: ">=4"
+  peerDependenciesMeta:
+    vitest:
+      optional: true
   bin:
     deoptkit: ./dist/main.mjs
   languageName: unknown

@@ -54,6 +54,7 @@ describe("deoptkit server", () => {
         "list_ics",
         "list_sessions",
         "load_log",
+        "load_manifest",
         "profile_run"
       ]);
       for (const tool of tools) {

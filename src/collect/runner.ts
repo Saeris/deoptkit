@@ -21,6 +21,18 @@ const CATEGORY_FLAGS: Record<LogCategory, string[]> = {
   sources: ["--log-code", "--log-source-code"]
 };
 
+/** The V8 flag set for the given categories (default all), plus logfile routing. */
+export const v8FlagsFor = (
+  logfile: string,
+  categories?: LogCategory[]
+): string[] => [
+  `--logfile=${logfile}`,
+  "--no-logfile-per-isolate",
+  ...(categories ?? [...LOG_CATEGORIES]).flatMap(
+    (category) => CATEGORY_FLAGS[category]
+  )
+];
+
 export interface RunOptions {
   /** Executable and arguments; V8 flags are inserted after the executable. */
   command: string[];
@@ -57,12 +69,7 @@ export const runWorkload = async (options: RunOptions): Promise<RunResult> => {
   const [executable, ...args] = options.command;
   const dir = await mkdtemp(join(tmpdir(), "deoptkit-run-"));
   const logfile = join(dir, "v8.log");
-  const categories = options.categories ?? [...LOG_CATEGORIES];
-  const flags = [
-    `--logfile=${logfile}`,
-    "--no-logfile-per-isolate",
-    ...categories.flatMap((category) => CATEGORY_FLAGS[category])
-  ];
+  const flags = v8FlagsFor(logfile, options.categories);
 
   const started = Date.now();
   try {

@@ -44,7 +44,36 @@
         "default": "./dist/harness.mjs"
       }
     },
+    "./vitest": {
+      "import": {
+        "development": "./src/vitest/index.ts",
+        "types": "./dist/vitest.d.mts",
+        "default": "./dist/vitest.mjs"
+      }
+    },
+    "./vitest/global-setup": {
+      "import": {
+        "development": "./src/vitest/globalSetup.ts",
+        "types": "./dist/vitest-global-setup.d.mts",
+        "default": "./dist/vitest-global-setup.mjs"
+      }
+    },
+    "./bench": {
+      "import": {
+        "development": "./src/bench/index.ts",
+        "types": "./dist/bench.d.mts",
+        "default": "./dist/bench.mjs"
+      }
+    },
     "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "vitest": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   },
   "publishConfig": {
     "access": "public",

@@ -40,7 +40,7 @@ Bench mode, not test mode — `vitest bench` files are already repeated-executio
 import { deoptKit } from "deoptkit/vitest";
 
 export default defineConfig({
-  test: { benchmark: deoptKit({ outDir: ".deopt" }) }
+  test: { ...deoptKit({ outDir: ".deopt" }) }
 });
 ```
 

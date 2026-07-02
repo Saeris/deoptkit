@@ -10,7 +10,10 @@ export default defineConfig({
     entry: {
       index: manifest.exports["."].import.development,
       main: "./src/main.ts",
-      harness: "./src/harness/index.ts"
+      harness: "./src/harness/index.ts",
+      vitest: "./src/vitest/index.ts",
+      "vitest-global-setup": "./src/vitest/globalSetup.ts",
+      bench: "./src/bench/index.ts"
     },
     clean: true,
     format: [`esm`],
