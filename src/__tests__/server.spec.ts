@@ -45,6 +45,11 @@ describe("deopt-mcp server", () => {
       const { tools } = await client.listTools();
       const byName = new Map(tools.map((tool) => [tool.name, tool]));
       expect([...byName.keys()].toSorted()).toEqual([
+        "get_findings",
+        "get_map",
+        "list_deopts",
+        "list_functions",
+        "list_ics",
         "list_sessions",
         "load_log"
       ]);
@@ -95,6 +100,15 @@ describe("deopt-mcp server", () => {
       });
       expect(result.isError).toBe(true);
       expect(textPayload(result).error).toMatch(/does not look like a V8 log/u);
+    });
+
+    it("reports unknown sessions as errors on analysis tools", async () => {
+      const result = await client.callTool({
+        name: "get_findings",
+        arguments: { sessionId: "nope" }
+      });
+      expect(result.isError).toBe(true);
+      expect(textPayload(result).error).toMatch(/Unknown session/u);
     });
 
     it("parses a minimal V8 log into a session and reports it in list_sessions", async () => {

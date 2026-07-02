@@ -13,11 +13,24 @@ import {
   type RegisteredTool,
   type ToolContext
 } from "./tools/defineTool";
+import { getFindings } from "./tools/getFindings";
+import { getMap } from "./tools/getMap";
+import { listDeopts } from "./tools/listDeopts";
+import { listFunctions } from "./tools/listFunctions";
+import { listIcs } from "./tools/listIcs";
 import { listSessions } from "./tools/listSessions";
 import { loadLog } from "./tools/loadLog";
 import manifest from "../package.json" with { type: "json" };
 
-const tools: RegisteredTool[] = [listSessions, loadLog];
+const tools: RegisteredTool[] = [
+  listSessions,
+  loadLog,
+  getFindings,
+  listIcs,
+  listDeopts,
+  listFunctions,
+  getMap
+];
 
 export const createServer = (): Server => {
   const server = new Server(

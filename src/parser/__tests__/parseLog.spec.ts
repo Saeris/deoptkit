@@ -1,35 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { LogModel } from "../../model/logModel";
 import { parseLog } from "../parseLog";
-
-const WORKLOAD = join(
-  import.meta.dirname,
-  "..",
-  "..",
-  "..",
-  "fixtures",
-  "workloads",
-  "megamorphic.js"
-);
-
-// Mirrors fixtures/generate.mjs — the category flags dexnode passes for modern V8.
-const v8Flags = (logfile: string): string[] => [
-  `--logfile=${logfile}`,
-  "--no-logfile-per-isolate",
-  "--log-deopt",
-  "--log-ic",
-  "--log-maps",
-  "--log-maps-details",
-  "--log-code",
-  "--log-source-code",
-  "--prof",
-  "--log-internal-timer-events",
-  "--detailed-line-info"
-];
+import { generateWorkloadLog } from "./helpers";
 
 describe("parseLog on a real generated V8 log", () => {
   let fixtureDir: string;
@@ -37,18 +12,7 @@ describe("parseLog on a real generated V8 log", () => {
 
   beforeAll(async () => {
     fixtureDir = await mkdtemp(join(tmpdir(), "deopt-mcp-parse-"));
-    const logfile = join(fixtureDir, "megamorphic.log");
-    const result = spawnSync(
-      process.execPath,
-      [...v8Flags(logfile), WORKLOAD],
-      { encoding: "utf8" }
-    );
-    if (result.status !== 0) {
-      throw new Error(
-        `workload failed (exit ${result.status}): ${result.stderr}`
-      );
-    }
-    model = await parseLog(logfile);
+    model = await parseLog(generateWorkloadLog("megamorphic", fixtureDir));
   }, 60_000);
 
   afterAll(async () => {
