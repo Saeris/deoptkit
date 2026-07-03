@@ -1,6 +1,6 @@
-import { statSync, watch } from "node:fs";
+import { statSync, unwatchFile, watchFile } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as v from "valibot";
@@ -123,8 +123,6 @@ export interface LspStreams {
   output: Writable;
 }
 
-const DEBOUNCE_MS = 100;
-
 /**
  * Diagnostics-only LSP server: watches the findings interchange written by
  * `deoptkit ci` (and future writers) and pushes publishDiagnostics whenever it
@@ -208,19 +206,13 @@ export const runLsp = async (
     });
   });
 
-  // Watch the directory: the file may not exist yet, and writers replace it atomically.
-  let timer: NodeJS.Timeout | undefined;
-  const scheduleRepublish = (): void => {
-    clearTimeout(timer);
-    timer = setTimeout(() => void publish(), DEBOUNCE_MS);
-  };
-  const watcher = watch(dirname(findingsPath), (_event, filename) => {
-    if (
-      filename === null ||
-      resolvePath(dirname(findingsPath), filename) === findingsPath
-    ) {
-      scheduleRepublish();
-    }
+  // Poll the file rather than fs.watch it: fs.watch on Windows aborts the process via
+  // a libuv assertion (src\win\fs-event.c) when the watched directory is mutated under
+  // 8.3 short-name paths. watchFile uses stat polling — no native directory backend, no
+  // crash — and findings.json changes once per bench run, so 250ms latency is fine.
+  const POLL_INTERVAL_MS = 250;
+  watchFile(findingsPath, { interval: POLL_INTERVAL_MS }, () => {
+    void publish();
   });
 
   connection.listen();
@@ -228,7 +220,6 @@ export const runLsp = async (
   try {
     return await exited;
   } finally {
-    clearTimeout(timer);
-    watcher.close();
+    unwatchFile(findingsPath);
   }
 };
