@@ -49,7 +49,12 @@ const asJoinedStrings = (value: unknown): string | undefined =>
     ? value.filter((item): item is string => typeof item === "string").join(",")
     : undefined;
 
-const matchKey = (found: Finding): string => {
+/**
+ * Stable identity for a finding across runs of edited code: kind + file + function +
+ * the IC key / churned properties / deopt reasons — deliberately not line numbers,
+ * which shift with every edit. Shared by compare_sessions and `deoptkit ci` baselines.
+ */
+export const findingIdentity = (found: Finding): string => {
   const detail =
     asString(found.evidence["key"]) ??
     asJoinedStrings(found.evidence["propertyNames"]) ??
@@ -57,6 +62,8 @@ const matchKey = (found: Finding): string => {
     "";
   return `${found.kind}|${found.file}|${found.functionName ?? ""}|${detail}`;
 };
+
+const matchKey = findingIdentity;
 
 const isUserFile = (file: string | undefined): file is string =>
   file !== undefined &&
