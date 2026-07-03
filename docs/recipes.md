@@ -71,3 +71,39 @@ node --logfile=v8.log --no-logfile-per-isolate --log-deopt --log-ic \
 ```
 
 → `load_log { path: "v8.log" }`. TypeScript projects get positions mapped back to `.ts` sources automatically when source maps are discoverable (inline or `.map` beside the built file).
+
+## SSR runtimes (`deoptkit/serve`)
+
+V8 flags don't cross child-process boundaries, so the pattern for servers is: boot the app's handler **in the same process** and drive it with repeated requests. `driveServer` handles listening, warmup (outside the window, so boot noise never pollutes findings), sequential measured requests, markers, and clean shutdown of keep-alive sockets.
+
+```js
+// ssr.observe.mjs — run via profile_run or `deoptkit ci`
+import { driveServer } from "deoptkit/serve";
+
+await driveServer({
+  start: async () => {
+    const { default: makeApp } = await import("./dist/server/entry.mjs");
+    return makeApp(); // anything returning an http.Server, { port } or { url }
+  },
+  requests: ["/", "/products/42", "/api/search?q=shoes"],
+  warmups: 200,
+  iterations: 2000,
+  label: "ssr"
+});
+```
+
+**Next.js**: drive the standalone output — `start: async () => { const { createServer } = await import("node:http"); const next = (await import("next")).default({ dev: false }); await next.prepare(); const handle = next.getRequestHandler(); return createServer((req, res) => handle(req, res)); }`. Server Components rendering and route handlers get hot under repeated requests, which is where app-level shape bugs live. (`next start` itself spawns children — always boot in-process as above.)
+
+**Astro**: same pattern against the node adapter's entry (`dist/server/entry.mjs` exposes a handler; wrap it in `node:http`'s `createServer`).
+
+**Builds as subjects**: single-process builds (Astro, Vite plugin pipelines, tsc-shaped tools) need no driver at all — `profile_run { command: ["node", "node_modules/astro/astro.js", "build"] }` observes the build itself. `next build` spawns workers whose logs can't be reached; that path is out of scope for now.
+
+## CI gating (`deoptkit ci`)
+
+```bash
+deoptkit ci bench/parse.bench.mjs             # first run writes .deopt/baselines/…, passes
+deoptkit ci bench/parse.bench.mjs             # exit 1 only on NEW structural findings
+deoptkit ci --update bench/parse.bench.mjs    # accept current findings as the baseline
+```
+
+Baselines contain identity-only structural findings (no line numbers, severities, or timing), so they survive unrelated edits and noisy runners. On GitHub Actions, new findings also emit `::warning` annotations at their source-mapped original positions. Every run rewrites `.deopt/findings.json` — the interchange consumed by editor tooling and agents.

@@ -46,7 +46,11 @@ const asString = (value: unknown): string | undefined =>
 
 const asJoinedStrings = (value: unknown): string | undefined =>
   Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string").join(",")
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        // Sorted so run-to-run ordering differences cannot change an identity.
+        .toSorted()
+        .join(",")
     : undefined;
 
 /**

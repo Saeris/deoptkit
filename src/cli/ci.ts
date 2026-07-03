@@ -56,14 +56,28 @@ export const parseCiArgs = (args: string[]): CiOptions | { error: string } => {
   return options;
 };
 
+/**
+ * Only run-stable finding kinds participate in gating: IC states and map churn are
+ * deterministic given the same inputs, and deopt loops survive OSR filtering. One-off
+ * eager/soft deopts depend on tier-up timing and would flake the gate — they still
+ * appear in findings.json for humans and agents.
+ */
+const GATED_KINDS = new Set<string>([
+  "megamorphic-ic",
+  "map-churn",
+  "deopt-loop"
+]);
+
 const toEntries = (findings: Finding[]): BaselineEntry[] =>
-  findings.map((found) => ({
-    identity: findingIdentity(found),
-    kind: found.kind,
-    file: found.file,
-    functionName: found.functionName,
-    summary: found.summary
-  }));
+  findings
+    .filter(({ kind }) => GATED_KINDS.has(kind))
+    .map((found) => ({
+      identity: findingIdentity(found),
+      kind: found.kind,
+      file: found.file,
+      functionName: found.functionName,
+      summary: found.summary
+    }));
 
 const baselinePathFor = (outDir: string, script: string): string => {
   const slug = relative(process.cwd(), resolve(script)).replace(
@@ -137,6 +151,7 @@ export const runCi = async (args: string[]): Promise<number> => {
   }
   let failed = false;
   const inGitHubActions = process.env["GITHUB_ACTIONS"] === "true";
+  const allFindings: Array<LocatedFinding & { script: string }> = [];
 
   for (const script of options.scripts) {
     const findings = await analyzeScript(script);
@@ -144,6 +159,7 @@ export const runCi = async (args: string[]): Promise<number> => {
       log(`deoptkit ci: ${findings.error}`);
       return 2;
     }
+    for (const found of findings) allFindings.push({ ...found, script });
     const entries = toEntries(findings);
     const baselinePath = baselinePathFor(options.outDir, script);
     const baseline = await readBaseline(baselinePath);
@@ -175,7 +191,8 @@ export const runCi = async (args: string[]): Promise<number> => {
     const known = new Set(baseline.findings.map(({ identity }) => identity));
     const current = new Set(entries.map(({ identity }) => identity));
     const introduced = findings.filter(
-      (found) => !known.has(findingIdentity(found))
+      (found) =>
+        GATED_KINDS.has(found.kind) && !known.has(findingIdentity(found))
     );
     const resolved = baseline.findings.filter(
       ({ identity }) => !current.has(identity)
@@ -214,5 +231,14 @@ export const runCi = async (args: string[]): Promise<number> => {
       );
     }
   }
+
+  // The findings interchange consumed by editor surfaces (deoptkit lsp) and agents:
+  // always the latest run's full picture, regardless of baseline verdicts.
+  await mkdir(options.outDir, { recursive: true });
+  await writeFile(
+    join(options.outDir, "findings.json"),
+    `${JSON.stringify({ createdAt: new Date().toISOString(), findings: allFindings }, null, 2)}\n`
+  );
+
   return failed ? 1 : 0;
 };

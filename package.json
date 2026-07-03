@@ -65,6 +65,13 @@
         "default": "./dist/bench.mjs"
       }
     },
+    "./serve": {
+      "import": {
+        "development": "./src/serve/index.ts",
+        "types": "./dist/serve.d.mts",
+        "default": "./dist/serve.mjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "peerDependencies": {

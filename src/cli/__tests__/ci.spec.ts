@@ -66,6 +66,19 @@ describe("deoptkit ci", () => {
     // Fixing it again is not a failure — resolved findings only prompt an update notice.
     await copyFile(join(WORKLOAD_DIR, "map-churn-fixed.js"), app);
     await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // Every run rewrites the findings interchange the LSP and agents consume.
+    const interchange = JSON.parse(
+      await readFile(join(outDir, "findings.json"), "utf8")
+    ) as {
+      createdAt: string;
+      findings: { kind: string; script: string }[];
+    };
+    expect(interchange.createdAt).toMatch(/^\d{4}-/u);
+    for (const found of interchange.findings) {
+      expect(found.script).toBe(app);
+      expect(found.kind.length).toBeGreaterThan(0);
+    }
   }, 300_000);
 
   it("formats GitHub annotations at the original source position", () => {

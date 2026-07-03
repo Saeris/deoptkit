@@ -13,7 +13,8 @@ export default defineConfig({
       harness: "./src/harness/index.ts",
       vitest: "./src/vitest/index.ts",
       "vitest-global-setup": "./src/vitest/globalSetup.ts",
-      bench: "./src/bench/index.ts"
+      bench: "./src/bench/index.ts",
+      serve: "./src/serve/index.ts"
     },
     clean: true,
     format: [`esm`],

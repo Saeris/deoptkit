@@ -209,17 +209,31 @@ export const computeFindings = (model: LogModel): Finding[] => {
     }
   }
 
+  // On-stack-replacement bailouts are tier-up mechanics, not pathologies: every loop
+  // that gets hot "deopts" to enter its optimized version. Reporting them as findings
+  // buries real signals and makes runs non-reproducible (OSR timing varies per run).
+  const isOsrNoise = (reason: string): boolean =>
+    reason.includes("on stack replacement") || reason.includes("OSR");
+
   for (const site of model.deopts) {
     if (!isUserCode(site.file)) continue;
+    const events = site.events.filter(({ reason }) => !isOsrNoise(reason));
+    if (events.length === 0) continue;
+    const count = events.length;
+    const reasons = [
+      ...new Set(
+        events.map(({ reason }) => reason).filter((reason) => reason !== "")
+      )
+    ].sort();
     const heat = heatOf(undefined, site.file);
-    if (site.kind === "eager" && site.count >= 2) {
+    if (site.kind === "eager" && count >= 2) {
       findings.push(
         finding(
           "deopt-loop",
           site,
-          `${site.count} eager deopts at the same position (${site.reasons.join("; ")})`,
-          score("deopt-loop", site.count, heat),
-          { kind: site.kind, count: site.count, reasons: site.reasons }
+          `${count} eager deopts at the same position (${reasons.join("; ")})`,
+          score("deopt-loop", count, heat),
+          { kind: site.kind, count, reasons }
         )
       );
     } else if (site.kind === "eager") {
@@ -227,9 +241,9 @@ export const computeFindings = (model: LogModel): Finding[] => {
         finding(
           "eager-deopt",
           site,
-          `Eager deopt: ${site.reasons.join("; ")}`,
-          score("eager-deopt", site.count, heat),
-          { kind: site.kind, count: site.count, reasons: site.reasons }
+          `Eager deopt: ${reasons.join("; ")}`,
+          score("eager-deopt", count, heat),
+          { kind: site.kind, count, reasons }
         )
       );
     } else if (site.kind === "soft") {
@@ -237,9 +251,9 @@ export const computeFindings = (model: LogModel): Finding[] => {
         finding(
           "soft-deopt",
           site,
-          `Soft deopt: ${site.reasons.join("; ")}`,
-          score("soft-deopt", site.count, heat),
-          { kind: site.kind, count: site.count, reasons: site.reasons }
+          `Soft deopt: ${reasons.join("; ")}`,
+          score("soft-deopt", count, heat),
+          { kind: site.kind, count, reasons }
         )
       );
     }
