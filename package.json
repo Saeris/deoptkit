@@ -1,6 +1,6 @@
 {
   "name": "deoptkit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A V8 deoptimization toolkit for AI agents and dev workflows: MCP server, findings engine, benchmark harness, and fix-verify comparison for inline caches, deopts, and hidden-class churn",
   "keywords": [
     "v8",
