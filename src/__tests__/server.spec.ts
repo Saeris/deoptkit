@@ -63,6 +63,16 @@ describe("deoptkit server", () => {
       }
       expect(byName.get("load_log")?.inputSchema.required).toContain("path");
     });
+
+    // Instructions are how an agent learns the profile -> findings -> fix -> compare
+    // loop without external docs; MCP clients surface them from the initialize result.
+    it("surfaces server instructions describing the core workflow", () => {
+      const instructions = client.getInstructions() ?? "";
+      expect(instructions.length).toBeGreaterThan(0);
+      expect(instructions).toContain("profile_run");
+      expect(instructions).toContain("get_findings");
+      expect(instructions).toContain("compare_sessions");
+    });
   });
 
   describe("prompts", () => {
