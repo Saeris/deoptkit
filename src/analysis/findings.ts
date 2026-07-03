@@ -84,6 +84,14 @@ const BASE_WEIGHT: Record<FindingKind, number> = {
 };
 
 /**
+ * Keyed ICs (`obj[key]`) going megamorphic usually means genuinely dynamic keys —
+ * inherent to generic dispatchers, not shape pollution the user can fix. Calibrated
+ * on the Valimock dogfood, where 8 keyed sites produced a wall of mid-40s severities
+ * in a codebase with zero real named-IC problems.
+ */
+const KEYED_IC_DISCOUNT = 0.45;
+
+/**
  * severity = base x (1 + log10(1 + occurrences)) x (1 + 4 x heat), clamped to 1-100,
  * where heat is the enclosing function's share of all self ticks. A megamorphic site
  * with even modest hits in a hot function outranks anything cold — matching how much
@@ -92,10 +100,14 @@ const BASE_WEIGHT: Record<FindingKind, number> = {
 const score = (
   kind: FindingKind,
   occurrences: number,
-  heat: number
+  heat: number,
+  discount = 1
 ): number => {
   const raw =
-    BASE_WEIGHT[kind] * (1 + Math.log10(1 + occurrences)) * (1 + 4 * heat);
+    BASE_WEIGHT[kind] *
+    discount *
+    (1 + Math.log10(1 + occurrences)) *
+    (1 + 4 * heat);
   return Math.max(1, Math.min(100, Math.round(raw)));
 };
 
@@ -158,18 +170,24 @@ export const computeFindings = (model: LogModel): Finding[] => {
     };
     const heat = heatOf(site.functionName, site.file);
     const hits = site.transitions.length;
+    const keyed = site.type.startsWith("Keyed");
     if (site.worstState === "megamorphic" || site.worstState === "generic") {
       findings.push(
         finding(
           "megamorphic-ic",
           at,
-          `${site.type} for property "${site.key}" went megamorphic (${hits} recorded transitions)`,
-          score("megamorphic-ic", hits, heat),
+          `${site.type} for property "${site.key}" went megamorphic (${hits} recorded transitions)${
+            keyed
+              ? " — keyed/dynamic access, often inherent to generic dispatch"
+              : ""
+          }`,
+          score("megamorphic-ic", hits, heat, keyed ? KEYED_IC_DISCOUNT : 1),
           {
             icType: site.type,
             key: site.key,
             worstState: site.worstState,
-            transitions: hits
+            transitions: hits,
+            keyedAccess: keyed
           }
         )
       );

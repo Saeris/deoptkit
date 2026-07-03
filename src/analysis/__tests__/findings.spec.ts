@@ -3,9 +3,60 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { Finding } from "../findings";
+import type { LogModel } from "../../model/logModel";
 import { generateWorkloadLog } from "../../parser/__tests__/helpers";
 import { parseLog } from "../../parser/parseLog";
 import { computeFindings } from "../findings";
+
+describe("computeFindings scoring calibration", () => {
+  // Calibrated on the Valimock dogfood: keyed (obj[key]) megamorphism usually means
+  // genuinely dynamic keys — inherent to generic dispatch — so it must rank below a
+  // named-property megamorphic site with identical evidence.
+  it("ranks named megamorphic ICs above keyed ones with equal evidence", () => {
+    const icSite = (type: string, key: string): LogModel["ics"][number] => ({
+      type,
+      file: "file:///app/src/hot.js",
+      functionName: "dispatch",
+      line: 10,
+      column: 5,
+      key,
+      worstState: "megamorphic",
+      transitions: Array.from({ length: 6 }, (_, index) => ({
+        time: index,
+        oldState: "polymorphic" as const,
+        newState: "megamorphic" as const,
+        mapAddress: "0x1"
+      }))
+    });
+    const model: LogModel = {
+      v8Version: "14.0.0",
+      ics: [icSite("KeyedLoadIC", "dynamic"), icSite("LoadIC", "name")],
+      deopts: [],
+      maps: {
+        createdCount: 0,
+        entries: new Map(),
+        eventCounts: {},
+        transitionSites: []
+      },
+      profile: { tickCount: 0, vmStates: {}, functions: [] },
+      scripts: new Map(),
+      functionIndex: [],
+      markers: [],
+      codeEntryCount: 0,
+      warnings: { unknownCommands: {}, badLines: 0 }
+    };
+    const findings = computeFindings(model);
+    const named = findings.find(
+      (found) => found.evidence["icType"] === "LoadIC"
+    );
+    const keyed = findings.find(
+      (found) => found.evidence["icType"] === "KeyedLoadIC"
+    );
+    expect(named?.severity ?? 0).toBeGreaterThan(keyed?.severity ?? 0);
+    expect(keyed?.evidence["keyedAccess"]).toBe(true);
+    expect(keyed?.summary).toContain("inherent");
+  });
+});
 
 describe("computeFindings across the pathology fixtures", () => {
   let fixtureDir: string;
