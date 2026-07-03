@@ -67,6 +67,27 @@ describe("compareSessions on the map-churn fix-verify pair", () => {
     );
   });
 
+  // The fixed constructor initializes every property in one literal — a one-time
+  // linear transition chain. That must NOT read as map churn (Valimock's fully
+  // initialized context object false-positived on a count-based threshold), while
+  // the conditional base version's churn must be reported as resolved.
+  it("does not flag a fully-initialized constructor as churn", () => {
+    const churnInHead = [
+      ...comparison.introduced.filter(
+        (found) => found.kind === "map-churn" && found.file.endsWith("app.js")
+      ),
+      ...comparison.persisting.filter(
+        (found) => found.kind === "map-churn" && found.file.endsWith("app.js")
+      )
+    ];
+    expect(churnInHead).toEqual([]);
+    expect(
+      comparison.resolved.some(
+        (found) => found.kind === "map-churn" && found.file.endsWith("app.js")
+      )
+    ).toBe(true);
+  });
+
   it("keeps finding matching stable across the edit (no self-noise in persisting)", () => {
     // Whatever persists must at least be attributed to real user files, not internals.
     for (const found of comparison.persisting) {

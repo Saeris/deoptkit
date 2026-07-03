@@ -235,6 +235,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
     anchor: { line: number; column: number; count: number };
     count: number;
     propertyNames: string[];
+    transitionsPerName: Map<string, number>;
   }
   const churnGroups = new Map<string, ChurnGroup>();
   for (const site of model.maps.transitionSites) {
@@ -247,7 +248,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
         functionName: site.functionName,
         anchor: { line: site.line, column: site.column, count: site.count },
         count: 0,
-        propertyNames: []
+        propertyNames: [],
+        transitionsPerName: new Map()
       };
       churnGroups.set(key, group);
     }
@@ -259,14 +261,35 @@ export const computeFindings = (model: LogModel): Finding[] => {
         count: site.count
       };
     }
+    for (const { propertyName } of site.events) {
+      if (propertyName === undefined) continue;
+      group.transitionsPerName.set(
+        propertyName,
+        (group.transitionsPerName.get(propertyName) ?? 0) + 1
+      );
+    }
     for (const name of site.propertyNames) {
       if (!group.propertyNames.includes(name)) group.propertyNames.push(name);
     }
   }
+
+  /** Unbounded random-keyed creation shows as volume even without per-name repeats. */
+  const CHURN_VOLUME_THRESHOLD = 100;
+  /** A property added from 3+ parent shapes means the shape tree branches — real churn. */
+  const CHURN_BRANCH_THRESHOLD = 3;
+
   for (const group of churnGroups.values()) {
-    // One shape family adds each property once; churn means many shape variants were
-    // born in the same function (several properties, repeatedly re-transitioned).
-    if (group.count < 8 || group.propertyNames.length < 2) continue;
+    // A healthy constructor builds one shape family: each property transitions exactly
+    // once, in one linear chain, on first execution. A 20-property object literal is
+    // NOT churn (learned dogfooding on Valimock, whose fully-initialized context object
+    // tripped a count-based threshold). Churn is branching — the same property added
+    // from several parent shapes — or unbounded volume from random-keyed objects.
+    const maxPerName = Math.max(0, ...group.transitionsPerName.values());
+    if (
+      maxPerName < CHURN_BRANCH_THRESHOLD &&
+      group.count < CHURN_VOLUME_THRESHOLD
+    )
+      continue;
     findings.push(
       finding(
         "map-churn",
@@ -276,9 +299,17 @@ export const computeFindings = (model: LogModel): Finding[] => {
           column: group.anchor.column,
           functionName: group.functionName
         },
-        `${group.count} map transitions created in one function (properties: ${group.propertyNames.join(", ")})`,
+        `${group.count} map transitions created in one function (properties: ${group.propertyNames
+          .slice(0, 8)
+          .join(
+            ", "
+          )}${group.propertyNames.length > 8 ? `, … +${group.propertyNames.length - 8} more` : ""})`,
         score("map-churn", group.count, heatOf(group.functionName, group.file)),
-        { transitionCount: group.count, propertyNames: group.propertyNames }
+        {
+          transitionCount: group.count,
+          propertyNames: group.propertyNames,
+          maxTransitionsPerProperty: maxPerName
+        }
       )
     );
   }
