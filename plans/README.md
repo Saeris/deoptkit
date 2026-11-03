@@ -6,24 +6,24 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 
 ## Execution order & status
 
-| Plan | Title                                                                                         | Priority | Effort | Depends on    | Status                                                                      |
-| ---- | --------------------------------------------------------------------------------------------- | -------- | ------ | ------------- | --------------------------------------------------------------------------- |
-| 001  | Parse inlined deopt locations and attribute deopt sites to functions                          | P1       | S      | —             | DONE                                                                        |
-| 002  | Remove `development` export conditions that point at unshipped `src/`                         | P1       | S      | —             | DONE                                                                        |
-| 003  | Normalize script URLs by stripping query strings and fragments                                | P1       | S      | —             | DONE                                                                        |
-| 004  | End-to-end test for the `deoptkit/vitest` bench preset                                        | P1       | M      | 002           | DONE                                                                        |
-| 005  | Make the vitest preset write `findings.json` so the editor loop closes                        | P1       | M      | 004           | DONE                                                                        |
-| 006  | Add an opt-in `nativeEsm` mode to the vitest preset                                           | P2       | S      | 002, 003, 004 | DONE                                                                        |
-| 007  | Window profile ticks and consolidate the tool layer                                           | P2       | M      | —             | DONE                                                                        |
-| 008  | Add MCP tool titles, annotations, and structured content                                      | P2       | M      | —             | DONE                                                                        |
-| 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline                        | P2       | L      | 005, 010      | TODO (rewritten 2026-11-03 for the workspace layout and the memo decisions) |
-| 010  | Convert the repository to a Yarn workspace with `deoptkit` at `packages/deoptkit`             | P1       | M      | —             | DONE                                                                        |
-| 011  | Report workspace-relative paths to agents and make `deoptkit ci` baselines portable           | P1       | M      | 010           | DONE                                                                        |
-| 012  | Slim tool responses (explanations once per kind, bounded IC histories, profile_run compareTo) | P1       | M      | 011           | IN PROGRESS                                                                 |
-| 013  | Merge findings across sessions in one `get_findings` call (vitest bench manifests)            | P2       | S      | 012           | TODO                                                                        |
-| 015  | Attribute ICs, ticks, and map transitions through V8 inlining tables (`code-source-info`)     | P1       | L      | 010           | IN PROGRESS                                                                 |
-| 018  | Gate this repository's own parser with `deoptkit ci` (self-dogfooding)                        | P2       | S      | 011           | TODO                                                                        |
-| 019  | Ship a Claude Code plugin (marketplace + MCP server + workflow skill)                         | P2       | S      | 010           | DONE                                                                        |
+| Plan | Title                                                                                         | Priority | Effort | Depends on    | Status      |
+| ---- | --------------------------------------------------------------------------------------------- | -------- | ------ | ------------- | ----------- |
+| 001  | Parse inlined deopt locations and attribute deopt sites to functions                          | P1       | S      | —             | DONE        |
+| 002  | Remove `development` export conditions that point at unshipped `src/`                         | P1       | S      | —             | DONE        |
+| 003  | Normalize script URLs by stripping query strings and fragments                                | P1       | S      | —             | DONE        |
+| 004  | End-to-end test for the `deoptkit/vitest` bench preset                                        | P1       | M      | 002           | DONE        |
+| 005  | Make the vitest preset write `findings.json` so the editor loop closes                        | P1       | M      | 004           | DONE        |
+| 006  | Add an opt-in `nativeEsm` mode to the vitest preset                                           | P2       | S      | 002, 003, 004 | DONE        |
+| 007  | Window profile ticks and consolidate the tool layer                                           | P2       | M      | —             | DONE        |
+| 008  | Add MCP tool titles, annotations, and structured content                                      | P2       | M      | —             | DONE        |
+| 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline                        | P2       | L      | 005, 010      | IN PROGRESS |
+| 010  | Convert the repository to a Yarn workspace with `deoptkit` at `packages/deoptkit`             | P1       | M      | —             | DONE        |
+| 011  | Report workspace-relative paths to agents and make `deoptkit ci` baselines portable           | P1       | M      | 010           | DONE        |
+| 012  | Slim tool responses (explanations once per kind, bounded IC histories, profile_run compareTo) | P1       | M      | 011           | DONE        |
+| 013  | Merge findings across sessions in one `get_findings` call (vitest bench manifests)            | P2       | S      | 012           | IN PROGRESS |
+| 015  | Attribute ICs, ticks, and map transitions through V8 inlining tables (`code-source-info`)     | P1       | L      | 010           | IN PROGRESS |
+| 018  | Gate this repository's own parser with `deoptkit ci` (self-dogfooding)                        | P2       | S      | 011           | IN PROGRESS |
+| 019  | Ship a Claude Code plugin (marketplace + MCP server + workflow skill)                         | P2       | S      | 010           | DONE        |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
