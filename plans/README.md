@@ -14,7 +14,7 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 | 004  | End-to-end test for the `deoptkit/vitest` bench preset                 | P1       | M      | 002           | IN PROGRESS |
 | 005  | Make the vitest preset write `findings.json` so the editor loop closes | P1       | M      | 004           | TODO        |
 | 006  | Add an opt-in `nativeEsm` mode to the vitest preset                    | P2       | S      | 002, 003, 004 | TODO        |
-| 007  | Window profile ticks and consolidate the tool layer                    | P2       | M      | —             | TODO        |
+| 007  | Window profile ticks and consolidate the tool layer                    | P2       | M      | —             | IN PROGRESS |
 | 008  | Add MCP tool titles, annotations, and structured content               | P2       | M      | —             | DONE        |
 | 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline | P2       | L      | 005           | TODO        |
 
