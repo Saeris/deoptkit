@@ -115,6 +115,10 @@ describe("computeFindings across the pathology fixtures", () => {
         found.kind === "deopt-loop" && found.file.endsWith("deopt-loop.js")
     );
     expect(loop).toBeDefined();
+    // Inlined deopts must be attributed to getX's own `obj.x`, not to the caller's
+    // position inside a mangled file URL that the LSP and CI annotations cannot open.
+    expect(loop?.functionName).toBe("getX");
+    expect(loop?.file.includes("inlined at")).toBe(false);
     expect(Number(loop?.evidence["count"])).toBeGreaterThanOrEqual(2);
     for (const other of deoptLoop) {
       if (other.kind === "eager-deopt" || other.kind === "soft-deopt") {

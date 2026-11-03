@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { LogModel } from "../../model/logModel";
-import { parseLog } from "../parseLog";
+import { parseDeoptLocation, parseLog } from "../parseLog";
 import { generateWorkloadLog } from "./helpers";
 
 describe("parseLog on a real generated V8 log", () => {
@@ -145,5 +145,86 @@ describe("parseLog on a real generated V8 log", () => {
         "script-source"
       ])
     );
+  });
+});
+
+describe("parseDeoptLocation", () => {
+  const url =
+    "file:///C:/GitHub/@saeris/deopt-mcp/fixtures/workloads/deopt-loop.js";
+
+  it("parses a plain location as one position with no inlining chain", () => {
+    expect(parseDeoptLocation(`<${url}:10:14>`)).toEqual({
+      site: { file: url, line: 10, column: 14 },
+      inlinedAt: []
+    });
+  });
+
+  // V8 appends ` inlined at <...>` for code inlined into a caller. Greedy-matching the
+  // whole string used to swallow `...:10:14> inlined at <file...` as the file name and
+  // report the caller's position, which made one deopt loop look like two sites with a
+  // bogus URL that downstream consumers (LSP, CI annotations) could not resolve.
+  it("splits an inlined location into the deopting expression and its caller chain", () => {
+    const parsed = parseDeoptLocation(
+      `<${url}:10:14> inlined at <${url}:16:12>`
+    );
+    expect(parsed?.site).toEqual({ file: url, line: 10, column: 14 });
+    expect(parsed?.inlinedAt).toEqual([{ file: url, line: 16, column: 12 }]);
+    expect(parsed?.site.file).not.toMatch(/[<>]/u);
+  });
+
+  it("keeps every level of a nested inlining chain, innermost first", () => {
+    const parsed = parseDeoptLocation(
+      `<${url}:10:14> inlined at <${url}:16:12> inlined at <${url}:30:3>`
+    );
+    expect(parsed?.inlinedAt).toEqual([
+      { file: url, line: 16, column: 12 },
+      { file: url, line: 30, column: 3 }
+    ]);
+  });
+
+  it("rejects text that is not a location so the reader counts a bad line", () => {
+    expect(parseDeoptLocation("not a location")).toBeUndefined();
+    expect(
+      parseDeoptLocation(`<${url}:10:14> inlined at oops`)
+    ).toBeUndefined();
+  });
+});
+
+describe("parseLog on the deopt-loop workload", () => {
+  let fixtureDir: string;
+  let model: LogModel;
+
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-deopt-"));
+    model = await parseLog(generateWorkloadLog("deopt-loop", fixtureDir));
+  }, 60_000);
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  // The deopt-loop fixture is this tool's definition of the pathology: one expression
+  // (`obj.x` in getX) deopts once per new shape. V8 logs some of those deopts as inlined
+  // into `hot` and some not, so a parser that keys sites by the caller's position would
+  // split the loop and under-count it, hiding the repeated-deopt signal.
+  it("merges inlined and non-inlined deopts of one expression into a single named site", () => {
+    const sites = model.deopts.filter(
+      (site) =>
+        site.file.endsWith("deopt-loop.js") &&
+        site.kind === "eager" &&
+        site.line === 10 &&
+        site.column === 14
+    );
+    expect(sites).toHaveLength(1);
+    const [site] = sites;
+    expect(site?.functionName).toBe("getX");
+    expect(site?.count).toBeGreaterThanOrEqual(5);
+    expect(site?.inlinedCount).toBeGreaterThanOrEqual(1);
+    expect(site?.events.some((event) => event.inlinedAt !== undefined)).toBe(
+      true
+    );
+    expect(
+      model.deopts.some((entry) => entry.file.includes("inlined at"))
+    ).toBe(false);
   });
 });

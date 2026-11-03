@@ -56,9 +56,17 @@ export interface IcSite {
 
 export type DeoptKind = "eager" | "lazy" | "soft" | "unknown";
 
+export interface SourcePosition {
+  file: string;
+  line: number;
+  column: number;
+}
+
 export interface DeoptEvent {
   time: number;
   reason: string;
+  /** Callers this deopt was inlined into, innermost first; absent when not inlined. */
+  inlinedAt?: SourcePosition[];
 }
 
 /** All deoptimizations observed at one source position. */
@@ -66,10 +74,14 @@ export interface DeoptSite {
   file: string;
   line: number;
   column: number;
+  /** Name of the function containing this position, resolved from the code map when available. */
+  functionName: string | undefined;
   kind: DeoptKind;
   /** Distinct V8 bailout reasons seen here, e.g. "Insufficient type feedback for generic named access". */
   reasons: string[];
   count: number;
+  /** Events whose code was inlined into a caller when they deopted. */
+  inlinedCount: number;
   firstTime: number;
   lastTime: number;
   /** Individual deopt occurrences, for time-window filtering. */

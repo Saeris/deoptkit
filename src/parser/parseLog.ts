@@ -9,7 +9,8 @@ import type {
   LogModel,
   MapEntry,
   MapTransitionSite,
-  Marker
+  Marker,
+  SourcePosition
 } from "../model/logModel";
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
@@ -29,8 +30,29 @@ const IC_COMMANDS = [
 /** Trailing `url:line:column` in a code entry name, e.g. `getX file:///a/b.js:6:14`. */
 const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
 
-/** Deopt location field, e.g. `<file:///a/b.js:23:1>`. */
-const DEOPT_LOCATION_RE = /^<(?<file>.+):(?<line>\d+):(?<column>\d+)>$/u;
+const DEOPT_POSITION_RE = /^<(?<file>.+):(?<line>\d+):(?<column>\d+)>$/u;
+
+/**
+ * V8 writes a deopt location as `<url:line:col>` and, for code inlined into a
+ * caller, appends ` inlined at <url:line:col>` once per inlining level. The first
+ * segment is the deopting expression; the rest is the caller chain, innermost first.
+ */
+export const parseDeoptLocation = (
+  location: string
+): { site: SourcePosition; inlinedAt: SourcePosition[] } | undefined => {
+  const positions: SourcePosition[] = [];
+  for (const segment of location.split(" inlined at ")) {
+    const match = DEOPT_POSITION_RE.exec(segment);
+    if (!match?.groups) return undefined;
+    positions.push({
+      file: match.groups["file"] ?? "",
+      line: Number(match.groups["line"]),
+      column: Number(match.groups["column"])
+    });
+  }
+  const [site, ...inlinedAt] = positions;
+  return { site, inlinedAt };
+};
 
 /**
  * Harness marker functions from `deoptkit/harness`. Eval'd functions carry an empty
@@ -106,6 +128,30 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   const scripts = new Map<string, string>();
   const functionIndex = new Map<string, FunctionInfo>();
   const markers: Marker[] = [];
+
+  /**
+   * Name of the function whose start is the closest one at or before a position in
+   * the same file. The index has no end positions, so this is a heuristic.
+   */
+  const enclosingFunctionName = (
+    file: string,
+    line: number,
+    column: number
+  ): string | undefined => {
+    let best: FunctionInfo | undefined;
+    for (const info of functionIndex.values()) {
+      if (info.file !== file) continue;
+      if (info.line > line || (info.line === line && info.column > column))
+        continue;
+      if (
+        !best ||
+        info.line > best.line ||
+        (info.line === best.line && info.column > best.column)
+      )
+        best = info;
+    }
+    return best?.functionName;
+  };
 
   /** Merge all optimization tiers of a function into one row keyed by source identity. */
   const tickRowFor = (entry: CodeEntry): FunctionTicks => {
@@ -242,41 +288,51 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     "code-deopt": ([
       time,
       _size,
-      _address,
+      address,
       _inliningId,
       _scriptOffset,
       kind,
       location,
       reason
     ]): void => {
-      const match = DEOPT_LOCATION_RE.exec(location ?? "");
-      if (!match?.groups)
-        throw new Error(`unrecognized deopt location: ${location}`);
-      const file = match.groups["file"] ?? "";
-      const line = match.groups["line"] ?? "";
-      const column = match.groups["column"] ?? "";
+      const parsed = parseDeoptLocation(location ?? "");
+      if (!parsed) throw new Error(`unrecognized deopt location: ${location}`);
+      const { site: position, inlinedAt } = parsed;
       const parsedKind = parseDeoptKind(kind ?? "");
-      const siteKey = `${parsedKind}|${file}|${line}|${column}`;
+      const siteKey = `${parsedKind}|${position.file}|${position.line}|${position.column}`;
       const timestamp = Number(time);
+      // The logged address is the deopting code object, which for inlined code is
+      // the caller, not the function containing the position.
+      const functionName =
+        (inlinedAt.length === 0
+          ? codeMap.find(BigInt(address ?? "0"))?.functionName
+          : undefined) ??
+        enclosingFunctionName(position.file, position.line, position.column);
       let site = deoptSites.get(siteKey);
       if (!site) {
         site = {
-          file,
-          line: Number(line),
-          column: Number(column),
+          ...position,
+          functionName,
           kind: parsedKind,
           reasons: [],
           count: 0,
+          inlinedCount: 0,
           firstTime: timestamp,
           lastTime: timestamp,
           events: []
         };
         deoptSites.set(siteKey, site);
       }
+      site.functionName ??= functionName;
       site.count += 1;
+      if (inlinedAt.length > 0) site.inlinedCount += 1;
       site.lastTime = Math.max(site.lastTime, timestamp);
       site.firstTime = Math.min(site.firstTime, timestamp);
-      site.events.push({ time: timestamp, reason: reason ?? "" });
+      site.events.push({
+        time: timestamp,
+        reason: reason ?? "",
+        ...(inlinedAt.length > 0 ? { inlinedAt } : {})
+      });
       if (reason && !site.reasons.includes(reason)) site.reasons.push(reason);
     },
     "map-create": ([time, address]): void => {

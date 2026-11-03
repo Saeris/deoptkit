@@ -225,7 +225,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
         events.map(({ reason }) => reason).filter((reason) => reason !== "")
       )
     ].sort();
-    const heat = heatOf(undefined, site.file);
+    const heat = heatOf(site.functionName, site.file);
     if (site.kind === "eager" && count >= 2) {
       findings.push(
         finding(
@@ -233,7 +233,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
           site,
           `${count} eager deopts at the same position (${reasons.join("; ")})`,
           score("deopt-loop", count, heat),
-          { kind: site.kind, count, reasons }
+          { kind: site.kind, count, reasons, inlinedCount: site.inlinedCount }
         )
       );
     } else if (site.kind === "eager") {
@@ -243,7 +243,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
           site,
           `Eager deopt: ${reasons.join("; ")}`,
           score("eager-deopt", count, heat),
-          { kind: site.kind, count, reasons }
+          { kind: site.kind, count, reasons, inlinedCount: site.inlinedCount }
         )
       );
     } else if (site.kind === "soft") {
@@ -253,7 +253,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
           site,
           `Soft deopt: ${reasons.join("; ")}`,
           score("soft-deopt", count, heat),
-          { kind: site.kind, count, reasons }
+          { kind: site.kind, count, reasons, inlinedCount: site.inlinedCount }
         )
       );
     }
