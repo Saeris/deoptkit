@@ -63,6 +63,9 @@ export const findingIdentity = (found: Finding): string => {
     asString(found.evidence["key"]) ??
     asJoinedStrings(found.evidence["propertyNames"]) ??
     asJoinedStrings(found.evidence["reasons"]) ??
+    // Keyed sites carry no single key, so the IC type keeps a function's keyed load
+    // and keyed store sites apart.
+    asString(found.evidence["icType"]) ??
     "";
   return `${found.kind}|${found.file}|${found.functionName ?? ""}|${detail}`;
 };

@@ -129,6 +129,8 @@ export const listIcs = defineTool({
           line: site.line,
           column: site.column,
           key: site.key,
+          keys: site.keys,
+          distinctKeys: site.distinctKeys,
           worstState: site.worstState,
           transitionCount: site.transitions.length,
           // How many shapes hit the site tells an agent whether to normalize shapes or

@@ -485,3 +485,83 @@ describe("parseLog tier names from code-creation markers", () => {
     });
   });
 });
+
+describe("parseLog models keyed IC sites by position", () => {
+  let fixtureDir: string;
+  let model: LogModel;
+
+  // V8's feedback is one slot per syntactic site; before this change the keyed events
+  // became three sites and the megamorphic one named whichever key was being accessed
+  // at the time.
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-keyed-"));
+    const path = join(fixtureDir, "keyed.v8.log");
+    await writeFile(
+      path,
+      [
+        "v8-version,14,0,0,0,-node.0,0",
+        "script-source,7,file:///app/k.js,const f = (o, k) => o[k];\\n",
+        "code-creation,JS,10,1000,0x1000,64,f file:///app/k.js:1:11,0x7001,~",
+        "KeyedLoadIC,0x1010,2000,1,22,0,1,0x9001,a,,",
+        "KeyedLoadIC,0x1010,2100,1,22,1,P,0x9002,b,,",
+        "KeyedLoadIC,0x1010,2200,1,22,P,N,0x9003,c,,",
+        "KeyedLoadIC,0x1010,2300,1,22,N,N,0x9004,a,,",
+        "LoadIC,0x1020,2400,1,22,0,1,0x9005,x,,",
+        "LoadIC,0x1020,2500,1,22,1,P,0x9006,y,,",
+        ""
+      ].join("\n")
+    );
+    model = await parseLog(path);
+  });
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("folds every key of a keyed access into one site that records the distinct keys", () => {
+    const keyed = model.ics.filter((site) => site.type === "KeyedLoadIC");
+    expect(keyed).toHaveLength(1);
+    const [site] = keyed;
+    expect(site?.transitions).toHaveLength(4);
+    expect(site?.worstState).toBe("megamorphic");
+    expect(site?.keys).toEqual(["a", "b", "c"]);
+    expect(site?.distinctKeys).toBe(3);
+    expect(site?.key).toBe("a");
+  });
+
+  // The count is what tells an agent a site is truly dynamic; an over-count past the cap
+  // would make a 33-key site look like it keeps growing.
+  it("keeps distinctKeys exact past the cap on retained keys", async () => {
+    const path = join(fixtureDir, "keyed-cap.v8.log");
+    const keys = Array.from({ length: 40 }, (_, index) => `k${index}`);
+    const states = ["0,1", "1,P", "P,N"];
+    await writeFile(
+      path,
+      [
+        "v8-version,14,0,0,0,-node.0,0",
+        "script-source,7,file:///app/k.js,const f = (o, k) => o[k];\\n",
+        "code-creation,JS,10,1000,0x1000,64,f file:///app/k.js:1:11,0x7001,~",
+        // The last key is repeated: it sits past the cap, so it is not retained, and
+        // checking membership against the capped list would count it as new again.
+        ...[...keys, "k39"].map(
+          (key, index) =>
+            `KeyedLoadIC,0x1010,${2000 + index},1,22,${states[index] ?? "N,N"},0x9001,${key},,`
+        ),
+        ""
+      ].join("\n")
+    );
+    const [site, ...rest] = (await parseLog(path)).ics;
+    expect(rest).toHaveLength(0);
+    expect(site?.keys).toHaveLength(32);
+    expect(site?.distinctKeys).toBe(40);
+    expect(site?.transitions).toHaveLength(41);
+  });
+
+  // Only keyed ICs fold by position: a named IC's key is the property written in the
+  // source, so named sites must stay separate per key rather than collapse with them.
+  it("keeps one site per property for named ICs", () => {
+    const named = model.ics.filter((site) => site.type === "LoadIC");
+    expect(named.map((site) => site.key).sort()).toEqual(["x", "y"]);
+    for (const site of named) expect(site.transitions).toHaveLength(1);
+  });
+});

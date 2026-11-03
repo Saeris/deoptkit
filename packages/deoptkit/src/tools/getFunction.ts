@@ -119,11 +119,14 @@ export const getFunction = defineTool({
     const deoptSites = model.deopts.filter((site) => inWindow(site));
 
     const annotations = [
-      ...icSites.map((site) => ({
-        line: site.line,
-        column: site.column,
-        note: `${site.type} "${site.key}" reached ${site.worstState} (${site.transitions.length} transitions)`
-      })),
+      ...icSites.map((site) => {
+        const keyed = site.type.startsWith("Keyed");
+        return {
+          line: site.line,
+          column: site.column,
+          note: `${site.type} ${keyed ? `[${site.distinctKeys} keys]` : `"${site.key}"`} reached ${site.worstState} (${site.transitions.length} transitions)`
+        };
+      }),
       ...deoptSites.map((site) => ({
         line: site.line,
         column: site.column,

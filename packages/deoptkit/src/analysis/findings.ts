@@ -184,24 +184,35 @@ export const computeFindings = (model: LogModel): Finding[] => {
     const heat = heatOf(site.functionName, site.file);
     const hits = site.transitions.length;
     const keyed = site.type.startsWith("Keyed");
+    const exampleKeys = site.keys
+      .slice(0, 3)
+      .map((exampleKey) => `"${exampleKey}"`)
+      .join(", ");
     if (site.worstState === "megamorphic" || site.worstState === "generic") {
       findings.push(
         finding(
           "megamorphic-ic",
           at,
-          `${site.type} for property "${site.key}" went megamorphic (${hits} recorded transitions)${
-            keyed
-              ? " — keyed/dynamic access, often inherent to generic dispatch"
-              : ""
-          }`,
+          keyed
+            ? `${site.type} at a dynamic-key site went megamorphic (${hits} recorded transitions over ${site.distinctKeys} distinct keys, e.g. ${exampleKeys}) — often inherent to generic dispatch`
+            : `${site.type} for property "${site.key}" went megamorphic (${hits} recorded transitions)`,
           score("megamorphic-ic", hits, heat, keyed ? KEYED_IC_DISCOUNT : 1),
-          {
-            icType: site.type,
-            key: site.key,
-            worstState: site.worstState,
-            transitions: hits,
-            keyedAccess: keyed
-          }
+          keyed
+            ? {
+                icType: site.type,
+                keys: site.keys.slice(0, 8),
+                distinctKeys: site.distinctKeys,
+                worstState: site.worstState,
+                transitions: hits,
+                keyedAccess: true
+              }
+            : {
+                icType: site.type,
+                key: site.key,
+                worstState: site.worstState,
+                transitions: hits,
+                keyedAccess: false
+              }
         )
       );
     } else if (site.worstState === "polymorphic" && heat > 0) {
@@ -209,14 +220,24 @@ export const computeFindings = (model: LogModel): Finding[] => {
         finding(
           "polymorphic-ic",
           at,
-          `${site.type} for property "${site.key}" is polymorphic inside a hot function`,
+          keyed
+            ? `${site.type} at a dynamic-key site (${site.distinctKeys} distinct keys, e.g. ${exampleKeys}) is polymorphic inside a hot function`
+            : `${site.type} for property "${site.key}" is polymorphic inside a hot function`,
           score("polymorphic-ic", hits, heat),
-          {
-            icType: site.type,
-            key: site.key,
-            worstState: site.worstState,
-            transitions: hits
-          }
+          keyed
+            ? {
+                icType: site.type,
+                keys: site.keys.slice(0, 8),
+                distinctKeys: site.distinctKeys,
+                worstState: site.worstState,
+                transitions: hits
+              }
+            : {
+                icType: site.type,
+                key: site.key,
+                worstState: site.worstState,
+                transitions: hits
+              }
         )
       );
     }
@@ -232,34 +253,79 @@ export const computeFindings = (model: LogModel): Finding[] => {
     if (!isUserCode(site.file)) continue;
     const events = site.events.filter(({ reason }) => !isOsrNoise(reason));
     if (events.length === 0) continue;
-    const count = events.length;
-    const reasons = [
-      ...new Set(
-        events.map(({ reason }) => reason).filter((reason) => reason !== "")
-      )
-    ].sort();
     const heat = heatOf(site.functionName, site.file);
-    if (site.kind === "eager" && count >= 2) {
+    const distinctReasons = (
+      list: ReadonlyArray<{ reason: string }>
+    ): string[] =>
+      [
+        ...new Set(
+          list.map(({ reason }) => reason).filter((reason) => reason !== "")
+        )
+      ].sort();
+    // Modern V8 logs insufficient-type-feedback bailouts as eager deopts, but they mean
+    // optimized code reached an expression it had never executed in that tier, the
+    // original soft-deopt meaning: warm-up, not instability.
+    const feedback = events.filter(({ reason }) =>
+      reason.startsWith("Insufficient type feedback")
+    );
+    const hard = events.filter(
+      ({ reason }) => !reason.startsWith("Insufficient type feedback")
+    );
+    if (hard.length >= 2 && site.kind === "eager") {
+      const reasons = distinctReasons(hard);
       findings.push(
         finding(
           "deopt-loop",
           site,
-          `${count} eager deopts at the same position (${reasons.join("; ")})`,
-          score("deopt-loop", count, heat),
-          { kind: site.kind, count, reasons, inlinedCount: site.inlinedCount }
+          `${hard.length} eager deopts at the same position (${reasons.join("; ")})`,
+          score("deopt-loop", hard.length, heat),
+          {
+            kind: site.kind,
+            count: hard.length,
+            reasons,
+            inlinedCount: site.inlinedCount
+          }
         )
       );
-    } else if (site.kind === "eager") {
+    } else if (hard.length === 1 && site.kind === "eager") {
+      const reasons = distinctReasons(hard);
       findings.push(
         finding(
           "eager-deopt",
           site,
           `Eager deopt: ${reasons.join("; ")}`,
-          score("eager-deopt", count, heat),
-          { kind: site.kind, count, reasons, inlinedCount: site.inlinedCount }
+          score("eager-deopt", hard.length, heat),
+          {
+            kind: site.kind,
+            count: hard.length,
+            reasons,
+            inlinedCount: site.inlinedCount
+          }
         )
       );
-    } else if (site.kind === "soft") {
+    }
+    if (feedback.length > 0) {
+      const reasons = distinctReasons(feedback);
+      findings.push(
+        finding(
+          "soft-deopt",
+          site,
+          `Soft deopt (insufficient type feedback): ${reasons.join("; ")}`,
+          score("soft-deopt", feedback.length, heat),
+          {
+            kind: site.kind,
+            count: feedback.length,
+            reasons,
+            inlinedCount: site.inlinedCount
+          }
+        )
+      );
+    }
+    // Feedback bailouts on a soft-kind site are already reported above; only the rest
+    // belong here, or one site would yield two findings with the same identity.
+    if (site.kind === "soft" && hard.length > 0) {
+      const count = hard.length;
+      const reasons = distinctReasons(hard);
       findings.push(
         finding(
           "soft-deopt",

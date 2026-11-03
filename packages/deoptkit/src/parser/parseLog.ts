@@ -30,6 +30,9 @@ const IC_COMMANDS = [
   "StoreInArrayLiteralIC"
 ] as const;
 
+/** Cap on the distinct keys retained per IC site, so a dynamic-key site cannot grow without bound. */
+const MAX_SITE_KEYS = 32;
+
 /** Trailing `url:line:column` in a code entry name, e.g. `getX file:///a/b.js:6:14`. */
 const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
 
@@ -167,6 +170,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   let v8Version = "unknown";
   const codeMap = new CodeMap();
   const icSites = new Map<string, IcSite>();
+  /** Every distinct key seen per keyed site, so `distinctKeys` stays exact past the `keys` cap. */
+  const siteKeys = new Map<string, Set<string>>();
   const deoptSites = new Map<string, DeoptSite>();
   let mapsCreated = 0;
   const mapEntries = new Map<string, MapEntry>();
@@ -374,9 +379,17 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       if (!parsedOld || !parsedNew)
         throw new Error(`unrecognized IC state: ${oldState}->${newState}`);
       const at = eventSite(BigInt(pc ?? "0"), line, column);
-      const siteKey = `${type}|${at.file ?? "?"}|${at.line}|${at.column}|${key}`;
+      const keyed = type.startsWith("Keyed");
+      // V8's feedback is one slot per syntactic site; for keyed access the logged key is
+      // only the one being accessed when the slot changed state, so splitting by key
+      // invents sites and lands the megamorphic transition on a random key.
+      const siteKey = keyed
+        ? `${type}|${at.file ?? "?"}|${at.line}|${at.column}`
+        : `${type}|${at.file ?? "?"}|${at.line}|${at.column}|${key}`;
       let site = icSites.get(siteKey);
       if (!site) {
+        // Keyed sites collect their keys below, through the exact-count set.
+        const keys = keyed || key === undefined || key === "" ? [] : [key];
         site = {
           type,
           file: at.file,
@@ -384,10 +397,24 @@ export const parseLog = async (path: string): Promise<LogModel> => {
           line: at.line,
           column: at.column,
           key: key ?? "",
+          keys,
+          distinctKeys: keys.length,
           worstState: parsedNew,
           transitions: []
         };
         icSites.set(siteKey, site);
+      }
+      if (keyed && key !== undefined && key !== "") {
+        let seen = siteKeys.get(siteKey);
+        if (!seen) {
+          seen = new Set();
+          siteKeys.set(siteKey, seen);
+        }
+        if (!seen.has(key)) {
+          seen.add(key);
+          site.distinctKeys = seen.size;
+          if (site.keys.length < MAX_SITE_KEYS) site.keys.push(key);
+        }
       }
       site.transitions.push({
         time: Number(time),

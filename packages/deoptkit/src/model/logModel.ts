@@ -50,8 +50,12 @@ export interface IcSite {
   /** 1-based position within `file`. */
   line: number;
   column: number;
-  /** Property key being accessed. */
+  /** Property key being accessed; for keyed ICs the first key observed at the site. */
   key: string;
+  /** Distinct keys observed at a keyed site (obj[key]), in first-seen order, at most MAX_SITE_KEYS; one entry (the property) for named ICs. */
+  keys: string[];
+  /** Number of distinct keys observed, uncapped. */
+  distinctKeys: number;
   worstState: IcState;
   transitions: IcTransition[];
 }

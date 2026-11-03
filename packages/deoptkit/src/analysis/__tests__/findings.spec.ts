@@ -6,6 +6,7 @@ import type { Finding } from "../findings";
 import type { LogModel } from "../../model/logModel";
 import { generateWorkloadLog } from "../../parser/__tests__/helpers";
 import { parseLog } from "../../parser/parseLog";
+import { findingIdentity } from "../compare";
 import { computeFindings } from "../findings";
 
 describe("computeFindings scoring calibration", () => {
@@ -20,6 +21,8 @@ describe("computeFindings scoring calibration", () => {
       line: 10,
       column: 5,
       key,
+      keys: [key],
+      distinctKeys: 1,
       worstState: "megamorphic",
       transitions: Array.from({ length: 6 }, (_, index) => ({
         time: index,
@@ -59,6 +62,107 @@ describe("computeFindings scoring calibration", () => {
   });
 });
 
+const modelWith = (parts: Pick<LogModel, "ics" | "deopts">): LogModel => ({
+  v8Version: "14.0.0",
+  ...parts,
+  maps: {
+    createdCount: 0,
+    entries: new Map(),
+    eventCounts: {},
+    transitionSites: []
+  },
+  profile: { tickCount: 0, vmStates: {}, functions: [], samples: [] },
+  scripts: new Map(),
+  functionIndex: [],
+  markers: [],
+  codeEntryCount: 0,
+  codeSourceInfoCount: 0,
+  warnings: { unknownCommands: {}, badLines: 0 }
+});
+
+describe("computeFindings for keyed IC sites", () => {
+  // The identity must not depend on which key crossed the threshold, or CI baselines
+  // flicker between runs of the same code.
+  it("reports one megamorphic finding per keyed site with an identity free of any key", () => {
+    const findings = computeFindings(
+      modelWith({
+        deopts: [],
+        ics: [
+          {
+            type: "KeyedLoadIC",
+            file: "file:///app/src/hot.js",
+            functionName: "tick",
+            line: 10,
+            column: 5,
+            key: "js",
+            keys: ["js", "gc", "other"],
+            distinctKeys: 3,
+            worstState: "megamorphic",
+            transitions: Array.from({ length: 6 }, (_, index) => ({
+              time: index,
+              oldState: "polymorphic" as const,
+              newState: "megamorphic" as const,
+              mapAddress: "0x1"
+            }))
+          }
+        ]
+      })
+    );
+    const megamorphic = findings.filter(
+      (found) => found.kind === "megamorphic-ic"
+    );
+    expect(megamorphic).toHaveLength(1);
+    const [found] = megamorphic;
+    expect(found?.evidence["keys"]).toEqual(["js", "gc", "other"]);
+    expect(found?.evidence["distinctKeys"]).toBe(3);
+    expect(found?.evidence).not.toHaveProperty("key");
+    expect(found?.summary).toContain("dynamic-key");
+    expect(found?.summary).toContain("3 distinct keys");
+    expect(found ? findingIdentity(found) : "").toMatch(/\|KeyedLoadIC$/u);
+  });
+});
+
+describe("computeFindings for insufficient-type-feedback deopts", () => {
+  const deoptSite = (reasons: string[]): LogModel["deopts"][number] => ({
+    file: "file:///app/src/hot.js",
+    line: 4,
+    column: 12,
+    functionName: "add",
+    kind: "eager",
+    reasons: [...new Set(reasons)],
+    count: reasons.length,
+    inlinedCount: 0,
+    firstTime: 0,
+    lastTime: reasons.length,
+    events: reasons.map((reason, index) => ({ time: index, reason }))
+  });
+  const kindsFor = (...reasons: string[]): string[] =>
+    computeFindings(modelWith({ ics: [], deopts: [deoptSite(reasons)] })).map(
+      ({ kind }) => kind
+    );
+
+  // V8 removed the soft deopt kind and logs feedback bailouts as eager; they are
+  // warm-up, not instability, and must not gate CI.
+  it("classifies repeated feedback bailouts as a soft deopt, never a deopt loop", () => {
+    expect(
+      kindsFor(
+        "Insufficient type feedback for binary operation",
+        "Insufficient type feedback for binary operation"
+      )
+    ).toEqual(["soft-deopt"]);
+  });
+
+  it("still reports repeated real deopts at a site as a deopt loop", () => {
+    expect(kindsFor("wrong map", "wrong map")).toEqual(["deopt-loop"]);
+  });
+
+  it("splits a site's real and feedback deopts into separate findings", () => {
+    expect(
+      kindsFor("wrong map", "Insufficient type feedback for call").sort()
+    ).toEqual(["eager-deopt", "soft-deopt"]);
+  });
+});
+
 describe("computeFindings user-code filter", () => {
   // On Windows V8 logs CommonJS scripts with OS paths (C:\...\node_modules\ajv\dist\ajv.js)
   // and ESM with file URLs, so a forward-slash-only test let dependency code through as
@@ -71,6 +175,8 @@ describe("computeFindings user-code filter", () => {
       line: 10,
       column: 5,
       key: "name",
+      keys: ["name"],
+      distinctKeys: 1,
       worstState: "megamorphic",
       transitions: Array.from({ length: 6 }, (_, index) => ({
         time: index,
