@@ -11,7 +11,8 @@ import type {
   MapTransitionSite,
   Marker,
   SourcePosition,
-  TickSample
+  TickSample,
+  Tier
 } from "../model/logModel";
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
@@ -31,6 +32,21 @@ const IC_COMMANDS = [
 
 /** Trailing `url:line:column` in a code entry name, e.g. `getX file:///a/b.js:6:14`. */
 const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
+
+/** V8's code-creation marker → tier. An empty marker is interpreted code whose optimization V8 disabled. */
+const tierOf = (marker: string | undefined): Tier => {
+  const core = (marker ?? "").replace(/^o/u, "").replace(/'$/u, "");
+  switch (core) {
+    case "^":
+      return "baseline";
+    case "+":
+      return "maglev";
+    case "*":
+      return "turbofan";
+    default:
+      return "interpreted";
+  }
+};
 
 /**
  * Loaders append cache-busting queries to file URLs (Vitest `?vitest=<ts>`, Vite
@@ -394,7 +410,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     },
     "code-creation": ([
       kind,
-      kindNum,
+      _kindNum,
       time,
       start,
       size,
@@ -441,13 +457,15 @@ export const parseLog = async (path: string): Promise<LogModel> => {
           line: entry.line,
           column: entry.column ?? 0,
           tiers: [],
+          osr: false,
           codeCreations: 0
         };
         functionIndex.set(key, info);
       }
       info.codeCreations += 1;
-      const tier = Number(kindNum);
+      const tier = tierOf(tierMarker);
       if (!info.tiers.includes(tier)) info.tiers.push(tier);
+      if (tierMarker?.startsWith("o")) info.osr = true;
     },
     "script-source": ([, url, source]): void => {
       if (url === undefined || source === undefined) return;

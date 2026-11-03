@@ -172,6 +172,16 @@ describe("deoptkit server", () => {
       expect((payload.counts as { icSites: number }).icSites).toBeGreaterThan(
         0
       );
+      // map-churn runs 1e5 iterations, so a healthy session must come back without a
+      // cold warning; otherwise the warning would cry wolf on real workloads.
+      const quality = payload.quality as {
+        totalTicks: number;
+        userFunctionsOptimized: number;
+        warnings: { code: string }[];
+      };
+      expect(typeof quality.totalTicks).toBe("number");
+      expect(quality.userFunctionsOptimized).toBeGreaterThanOrEqual(1);
+      expect(quality.warnings.map(({ code }) => code)).not.toContain("cold");
 
       const findings = await client.callTool({
         name: "get_findings",
@@ -340,6 +350,35 @@ describe("deoptkit server", () => {
       expect(payload.error).toMatch(/Unknown session/u);
       expect(Object.keys(payload)).toEqual(["error"]);
     });
+
+    // A worthless session must announce itself where the agent looks first: both in
+    // the response that created it and again on get_findings, which an agent would
+    // otherwise read as "no findings, nothing wrong".
+    it("profile_run flags a trivial workload and get_findings repeats the warnings", async () => {
+      const result = await client.callTool({
+        name: "profile_run",
+        arguments: { command: ["node", "-e", "1 + 1"], timeoutMs: 60_000 }
+      });
+      expect(result.isError ?? false).toBe(false);
+      const payload = textPayload(result);
+      const quality = payload.quality as { warnings: { code: string }[] };
+      const codes = quality.warnings.map(({ code }) => code);
+      expect(codes.includes("no-user-code") || codes.includes("cold")).toBe(
+        true
+      );
+
+      const findings = await client.callTool({
+        name: "get_findings",
+        arguments: { sessionId: String(payload.sessionId) }
+      });
+      const { qualityWarnings } = textPayload(findings) as unknown as {
+        qualityWarnings: { sessionId: string; code: string }[];
+      };
+      expect(qualityWarnings.map(({ code }) => code)).toEqual(codes);
+      for (const warning of qualityWarnings) {
+        expect(warning.sessionId).toBe(String(payload.sessionId));
+      }
+    }, 120_000);
 
     it("reports unknown sessions as errors on analysis tools", async () => {
       const result = await client.callTool({

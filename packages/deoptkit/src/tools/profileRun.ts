@@ -1,5 +1,6 @@
 import { access, rm } from "node:fs/promises";
 import * as v from "valibot";
+import { sessionQuality } from "../analysis/quality";
 import { LOG_CATEGORIES, runWorkload } from "../collect/runner";
 import { parseLog } from "../parser/parseLog";
 import { comparisonPayload } from "./compareSessions";
@@ -127,6 +128,7 @@ export const profileRun = defineTool({
           profileTicks: model.profile.tickCount,
           codeEntries: model.codeEntryCount
         },
+        quality: sessionQuality(model),
         markers: [...new Set(model.markers.map(({ label }) => label))],
         warnings: model.warnings,
         ...(base ? { comparison: comparisonPayload(base, session) } : {})

@@ -2,6 +2,7 @@ import * as v from "valibot";
 import { findingIdentity } from "../analysis/compare";
 import type { Finding } from "../analysis/findings";
 import { computeFindings } from "../analysis/findings";
+import { sessionQuality } from "../analysis/quality";
 import type { Session } from "../sessions";
 import { defineTool, jsonResult } from "./defineTool";
 import {
@@ -154,6 +155,14 @@ export const getFindings = defineTool({
         }
       }
     }
+    // Quality is judged on the whole session: a mark window can legitimately hold no ticks.
+    const qualityWarnings = sessions.flatMap((session) =>
+      sessionQuality(session.model).warnings.map(({ code, message }) => ({
+        sessionId: session.id,
+        code,
+        message
+      }))
+    );
     const page = paginate(
       sessions.length === 1
         ? rows.map(({ item }) => item)
@@ -164,7 +173,8 @@ export const getFindings = defineTool({
     return jsonResult({
       ...page,
       items: page.items.map(slimFinding),
-      kinds: kindsLegend(page.items)
+      kinds: kindsLegend(page.items),
+      ...(qualityWarnings.length > 0 ? { qualityWarnings } : {})
     });
   }
 });

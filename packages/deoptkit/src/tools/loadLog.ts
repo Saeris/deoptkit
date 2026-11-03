@@ -1,5 +1,7 @@
 import { open } from "node:fs/promises";
 import * as v from "valibot";
+import type { SessionQuality } from "../analysis/quality";
+import { sessionQuality } from "../analysis/quality";
 import { parseLog } from "../parser/parseLog";
 import type { ToolContext } from "./defineTool";
 import { defineTool, jsonResult } from "./defineTool";
@@ -25,6 +27,7 @@ export type LoadOutcome =
         profileTicks: number;
         codeEntries: number;
       };
+      quality: SessionQuality;
       markers: string[];
       warnings: { unknownCommands: Record<string, number>; badLines: number };
     };
@@ -72,6 +75,7 @@ export const loadLogFile = async (
       profileTicks: model.profile.tickCount,
       codeEntries: model.codeEntryCount
     },
+    quality: sessionQuality(model),
     markers: [...new Set(model.markers.map(({ label }) => label))],
     warnings: model.warnings
   };

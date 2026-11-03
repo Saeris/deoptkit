@@ -190,14 +190,19 @@ export interface ProfileModel {
   samples: TickSample[];
 }
 
+/** An optimization tier, named from V8's stable code-creation marker. */
+export type Tier = "interpreted" | "baseline" | "maglev" | "turbofan";
+
 /** A function observed via `code-creation`, indexed by source identity. */
 export interface FunctionInfo {
   functionName: string;
   file: string;
   line: number;
   column: number;
-  /** code-creation kind numbers observed — each optimization tier logs its own creation. */
-  tiers: number[];
+  /** Optimization tiers observed for this function, from the code-creation markers, in first-seen order. */
+  tiers: Tier[];
+  /** True when any tier was entered through on-stack replacement (an o marker prefix). */
+  osr: boolean;
   codeCreations: number;
 }
 

@@ -170,6 +170,7 @@ export const getFunction = defineTool({
               file: toWorkspacePath(original.file, session.workspaceRoot)
             },
       optimizationTiers: fn?.tiers,
+      osr: fn?.osr,
       codeCreations: fn?.codeCreations,
       ticks,
       snippet: { startLine, endLine, text },

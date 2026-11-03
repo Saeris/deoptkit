@@ -89,7 +89,10 @@ const SERVER_INSTRUCTIONS = [
   "site you are drilling into.",
   "",
   "Warm-up matters: V8 only optimizes hot code, so profile workloads that run the target thousands of times",
-  "(the observed() helper in deoptkit/harness encodes this). Profile built output, not source, for libraries."
+  "(the observed() helper in deoptkit/harness encodes this). Profile built output, not source, for libraries.",
+  "",
+  "Every profile_run/load_log response carries `quality.warnings`; a `cold` or `no-ticks` warning means the findings describe",
+  "warm-up, not steady state, and the workload needs more iterations before they are worth acting on."
 ].join("\n");
 
 export const createServer = (): Server => {

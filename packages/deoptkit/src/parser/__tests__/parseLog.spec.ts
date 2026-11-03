@@ -308,6 +308,21 @@ describe("parseLog on the deopt-loop workload", () => {
       model.deopts.some((entry) => entry.file.includes("inlined at"))
     ).toBe(false);
   });
+
+  // V8's code-creation kind numbers shift between versions; the marker alphabet does
+  // not, and agents read these names. A deopt needs optimized code to bail out of, so
+  // `hot` must name TurboFan and the inlined `getX` an optimizing tier.
+  it("names the optimization tiers a function reached from the code-creation markers", () => {
+    const tiersOf = (name: string): string[] =>
+      model.functionIndex.find(
+        (info) =>
+          info.functionName === name && info.file.endsWith("deopt-loop.js")
+      )?.tiers ?? [];
+    expect(tiersOf("hot")).toContain("turbofan");
+    expect(
+      tiersOf("getX").some((tier) => tier === "maglev" || tier === "turbofan")
+    ).toBe(true);
+  });
 });
 
 describe("parseLog resolves inlined positions through code-source-info", () => {
@@ -409,5 +424,64 @@ describe("parseLog resolves inlined positions through code-source-info", () => {
   it("names an inlined deopt's function through the inlining table", () => {
     expect(model.deopts[0]?.functionName).toBe("getX");
     expect(model.deopts[0]?.inlinedCount).toBe(1);
+  });
+
+  // The two fixture creations carry the `~` and `*` markers; the tier names must come
+  // from those, since the kind numbers (10, 13) mean different things per V8 version.
+  it("derives each function's tier from its code-creation marker", () => {
+    const info = (name: string): unknown =>
+      model.functionIndex.find((fn) => fn.functionName === name);
+    expect(info("hot")).toMatchObject({ tiers: ["turbofan"], osr: false });
+    expect(info("getX")).toMatchObject({ tiers: ["interpreted"], osr: false });
+  });
+});
+
+describe("parseLog tier names from code-creation markers", () => {
+  let fixtureDir: string;
+  let model: LogModel;
+
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-tiers-"));
+    const path = join(fixtureDir, "tiers.v8.log");
+    const create = (name: string, address: string, marker: string): string =>
+      `code-creation,JS,10,50,${address},64,${name} file:///app/tiers.js:1:1,0x7001,${marker}`;
+    await writeFile(
+      path,
+      [
+        "v8-version,14,0,0,0,-node.0,0",
+        create("osrTurbofan", "0x1000", "o*"),
+        create("maglevSpecialized", "0x2000", "+'"),
+        create("baseline", "0x3000", "^"),
+        // V8 writes nothing for interpreted code whose optimization is disabled.
+        create("unmarked", "0x4000", ""),
+        ""
+      ].join("\n")
+    );
+    model = await parseLog(path);
+  });
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  // The osr flag must survive the tier collapse: an OSR-compiled tier is entered
+  // mid-loop, which tells an agent the function's hot loop ran once, not that it was
+  // called often.
+  it("maps the marker alphabet to tier names and flags on-stack replacement", () => {
+    const info = (name: string): unknown =>
+      model.functionIndex.find((fn) => fn.functionName === name);
+    expect(info("osrTurbofan")).toMatchObject({
+      tiers: ["turbofan"],
+      osr: true
+    });
+    expect(info("maglevSpecialized")).toMatchObject({
+      tiers: ["maglev"],
+      osr: false
+    });
+    expect(info("baseline")).toMatchObject({ tiers: ["baseline"], osr: false });
+    expect(info("unmarked")).toMatchObject({
+      tiers: ["interpreted"],
+      osr: false
+    });
   });
 });
