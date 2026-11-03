@@ -7,10 +7,12 @@ const DEFAULT_CONTEXT_LINES = 30;
 
 export const getFunction = defineTool({
   name: "get_function",
+  title: "Function deep dive",
   description:
     "Deep-dive one function: an annotated source snippet (from the sources embedded in the " +
     "log) plus every IC site, deopt, and profile tick attributed to it. Identify the function " +
     "by file substring plus functionName, or file plus a line number.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
     file: v.pipe(

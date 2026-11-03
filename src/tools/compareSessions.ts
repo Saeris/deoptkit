@@ -5,10 +5,12 @@ import { sessionIdSchema, unknownSessionError } from "./shared";
 
 export const compareSessionsTool = defineTool({
   name: "compare_sessions",
+  title: "Compare before/after",
   description:
     "Diff two sessions to verify a fix: findings resolved by the change, regressions it " +
     "introduced, findings persisting (with severity movement), and per-function CPU deltas. " +
     "Profile before the change, apply it, profile again, then compare base vs head.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     baseSessionId: v.pipe(
       sessionIdSchema,

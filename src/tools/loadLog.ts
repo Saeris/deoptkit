@@ -76,9 +76,11 @@ export const loadLogFile = async (
 
 export const loadLog = defineTool({
   name: "load_log",
+  title: "Load V8 log",
   description:
     "Parse a V8 log file (v8.log, produced by `node --prof --log-deopt --log-ic --log-maps ...`) " +
     "into a session for analysis. Returns the new session id, summary counts, and parser warnings.",
+  annotations: { readOnlyHint: true, idempotentHint: false },
   schema: v.object({
     path: v.pipe(
       v.string(),

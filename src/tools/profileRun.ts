@@ -6,10 +6,18 @@ import { defineTool, jsonResult } from "./defineTool";
 
 export const profileRun = defineTool({
   name: "profile_run",
+  title: "Profile a command",
   description:
     "Run a command under V8 optimization logging and load the result as a session — no flag " +
     "knowledge needed. The executable must be a V8 host that accepts V8 flags (node, or a path " +
     "to one); run npm-script workloads as `node path/to/script.js`. Then call get_findings.",
+  // It spawns the user's command, so it must never be auto-approved as read-only.
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false
+  },
   schema: v.object({
     command: v.pipe(
       v.array(v.string()),

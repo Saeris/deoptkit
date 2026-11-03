@@ -16,9 +16,11 @@ import {
 
 export const listDeopts = defineTool({
   name: "list_deopts",
+  title: "Deopt sites",
   description:
     "List deoptimization sites, most frequent first, with V8's bailout reasons. " +
     "Eager deopts mean optimized code hit an unexpected type; repeated eager deopts at one site are a deopt loop.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
     kinds: v.optional(

@@ -60,6 +60,13 @@ describe("deoptkit server", () => {
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe("object");
         expect(tool.description?.length ?? 0).toBeGreaterThan(0);
+        expect(tool.title?.length ?? 0).toBeGreaterThan(0);
+        expect(typeof tool.annotations?.readOnlyHint).toBe("boolean");
+        // Hosts auto-approve read-only tools; mislabeling profile_run would let a host
+        // run commands without asking.
+        expect(tool.annotations?.readOnlyHint).toBe(
+          tool.name !== "profile_run"
+        );
       }
       expect(byName.get("load_log")?.inputSchema.required).toContain("path");
     });
@@ -98,6 +105,15 @@ describe("deoptkit server", () => {
       });
       expect(result.isError ?? false).toBe(false);
       expect(textPayload(result)).toEqual({ sessions: [] });
+    });
+
+    // Clients that consume `structuredContent` must see exactly what text consumers see.
+    it("returns structuredContent identical to the text payload", async () => {
+      const result = await client.callTool({
+        name: "list_sessions",
+        arguments: {}
+      });
+      expect(result.structuredContent).toEqual(textPayload(result));
     });
   });
 

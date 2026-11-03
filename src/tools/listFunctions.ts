@@ -12,9 +12,11 @@ import {
 
 export const listFunctions = defineTool({
   name: "list_functions",
+  title: "CPU profile (flat)",
   description:
     "List functions by CPU profile weight (a flat profile). selfTicks is time at the top of " +
     "the stack; totalTicks counts any presence on the stack. Windows samples at ~15ms granularity.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
     file: fileFilterSchema,

@@ -9,10 +9,12 @@ const manifestSchema = v.object({
 
 export const loadManifest = defineTool({
   name: "load_manifest",
+  title: "Load bench manifest",
   description:
     "Load every V8 log listed in a deoptkit manifest (written by the deoptkit/vitest bench " +
     "preset to <outDir>/manifest.json) as sessions. Bench cases wrapped with benchObserved " +
     "expose <name>_start/<name>_end markers for the fromMark/toMark window filters.",
+  annotations: { readOnlyHint: true, idempotentHint: false },
   schema: v.object({
     path: v.pipe(
       v.string(),

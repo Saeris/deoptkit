@@ -23,10 +23,12 @@ const FINDING_KINDS = [
 
 export const getFindings = defineTool({
   name: "get_findings",
+  title: "Ranked findings",
   description:
     "The primary analysis entry point: everything wrong in a session, ranked worst-first. " +
     "Each finding has a severity (1-100), source location, explanation, and suggested fix. " +
     "Start here, fix the top finding, re-profile, and compare.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
     kinds: v.optional(

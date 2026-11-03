@@ -8,10 +8,12 @@ const MAX_CHAIN = 32;
 
 export const getMap = defineTool({
   name: "get_map",
+  title: "Hidden class details",
   description:
     "Inspect one V8 object map (hidden class) by address: its raw details, the transition " +
     "chain that produced it, and the IC sites that observed it. Map addresses appear in " +
     "list_ics transitions (includeTransitions) and get_findings evidence.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
     address: v.pipe(

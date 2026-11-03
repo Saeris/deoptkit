@@ -1,4 +1,8 @@
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  CallToolResult,
+  Tool,
+  ToolAnnotations
+} from "@modelcontextprotocol/sdk/types.js";
 import { toJsonSchema } from "@valibot/to-json-schema";
 import * as v from "valibot";
 import type { SessionStore } from "../sessions";
@@ -11,7 +15,10 @@ type InputSchema = v.ObjectSchema<v.ObjectEntries, undefined>;
 
 export interface ToolDef<Schema extends InputSchema = InputSchema> {
   name: string;
+  title: string;
   description: string;
+  /** Hosts use these hints to decide what to auto-approve, so every tool must state its own. */
+  annotations: ToolAnnotations & { readOnlyHint: boolean };
   schema: Schema;
   handler: (
     input: v.InferOutput<Schema>,
@@ -47,11 +54,19 @@ const toInputSchema = (schema: InputSchema): Tool["inputSchema"] => {
  */
 export const defineTool = <Schema extends InputSchema>({
   name,
+  title,
   description,
+  annotations,
   schema,
   handler
 }: ToolDef<Schema>): RegisteredTool => ({
-  info: { name, description, inputSchema: toInputSchema(schema) },
+  info: {
+    name,
+    title,
+    description,
+    inputSchema: toInputSchema(schema),
+    annotations
+  },
   invoke: async (args, ctx): Promise<CallToolResult> => {
     const parsed = v.safeParse(schema, args ?? {});
     if (!parsed.success) {
@@ -64,11 +79,20 @@ export const defineTool = <Schema extends InputSchema>({
   }
 });
 
-/** JSON text result helper — every tool responds with a single JSON payload. */
+/** `structuredContent` must be a JSON object, so arrays and primitives stay text-only. */
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * JSON result helper — every tool responds with a single JSON payload. Object payloads
+ * are also returned as `structuredContent` so clients can consume the data without
+ * re-parsing the text block, which stays for clients that only read text.
+ */
 export const jsonResult = (
   payload: unknown,
   options?: { isError: boolean }
 ): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+  ...(isRecord(payload) ? { structuredContent: payload } : {}),
   ...(options?.isError ? { isError: true } : {})
 });

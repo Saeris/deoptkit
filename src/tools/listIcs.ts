@@ -27,9 +27,11 @@ const IC_TYPES = [
 
 export const listIcs = defineTool({
   name: "list_ics",
+  title: "Inline cache sites",
   description:
     "List inline cache sites, worst state first. Filter by state (megamorphic/polymorphic/...), " +
     "IC type, or file substring. Transitions are omitted unless includeTransitions is set.",
+  annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
     states: v.optional(
