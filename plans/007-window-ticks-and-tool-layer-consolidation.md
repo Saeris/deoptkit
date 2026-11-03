@@ -77,6 +77,7 @@ Conventions: additive model changes only (the `LogModel` is a public type export
 - `src/analysis/window.ts`, `src/analysis/findings.ts` (export `isUserCode` only), `src/analysis/compare.ts` (import it)
 - `src/tools/shared.ts`, `src/tools/getFindings.ts`, `src/tools/listIcs.ts`, `src/tools/listDeopts.ts`, `src/tools/listFunctions.ts`
 - `src/harness/__tests__/harness.spec.ts`, `src/__tests__/server.spec.ts` (extend)
+- `src/__tests__/sessions.spec.ts`, `src/analysis/__tests__/findings.spec.ts` (add `samples: []` to their hand-built `profile` literals; amendment of 2026-11-03 after the executor found that the required field broke them)
 - `.bumpy/007-windowed-ticks.md` (create)
 
 **Out of scope**:
@@ -103,7 +104,7 @@ Conventions: additive model changes only (the `LogModel` is a public type export
 
 ### Step 2: Window the profile
 
-In `src/analysis/window.ts` `applyWindow`: filter `samples` by `inRange(time)`, then rebuild `profile` from the kept samples: `tickCount = samples.length`, `vmStates` recounted, `functions` recomputed as `FunctionTicks` rows (`selfTicks` from `self`, `totalTicks` from `onStack`), sorted by `selfTicks` descending like the parser does. The row's `functionName`/`file`/`line`/`column` come from splitting the key on `|` (file may be `undefined` when the segment is the string `undefined`; mirror how the key was built). Update the doc comment at lines 52–57 (ticks are now windowed; the map registry still passes through).
+In `src/analysis/window.ts` `applyWindow`: filter `samples` by `inRange(time)`, then rebuild `profile` from the kept samples: `tickCount = samples.length`, `vmStates` recounted, `functions` recomputed as `FunctionTicks` rows (`selfTicks` from `self`, `totalTicks` from `onStack`), sorted by `selfTicks` descending like the parser does. The row's `functionName`/`file`/`line`/`column` come from splitting the key on `|` (file may be `undefined` when the segment is the string `undefined`; mirror how the key was built). Update the doc comment at lines 52–57 (ticks are now windowed; the map registry still passes through). While there, recompute each windowed deopt site's `inlinedCount` from the kept events (`events.filter((event) => event.inlinedAt !== undefined).length`); plan 001 added the field and `applyWindow` carried it over unwindowed, so a windowed site could report `inlinedCount > count`.
 
 **Verify**: `vp test src/harness/__tests__/harness.spec.ts` → passes.
 
