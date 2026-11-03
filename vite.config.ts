@@ -26,7 +26,9 @@ export default defineConfig({
     name: manifest.name,
     globals: true,
     include: ["**/*.{test,spec}.{ts,tsx}"],
-    exclude: ["**/node_modules/**", "**/dist/**"],
+    // Claude Code executor worktrees live under .claude/; their copies of the
+    // suite must not run as part of this checkout.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
     environment: "node",
     passWithNoTests: true
   }
