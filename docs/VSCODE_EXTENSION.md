@@ -137,3 +137,36 @@ What would change the recommendation:
 7. The root `.gitignore` ignores `.vscode`. Should the extension's `.vscode/launch.json` for F5 debugging be committed through an exception?
 
 ## Smoke test
+
+Recorded 2026-11-03 on Windows 10 with Node 26.13.0, from a clean build of `packages/deoptkit` followed by `extensions/deoptkit-vscode`.
+
+Verified headlessly:
+
+- `vp -C extensions/deoptkit-vscode pack` writes exactly `dist/extension.cjs` and `dist/server.cjs`, also on repeated runs. The two entries are separate pack configs on purpose: with one config tsdown put its runtime helpers in a chunk named after the extension entry, `server.cjs` required that chunk, and the server died outside the extension host with `Cannot find module 'vscode'`. `server.cjs` now has no relative `require`, and `vscode` is required only by `extension.cjs`, which bundles `vscode-languageclient`.
+- `vp exec vsce package --no-dependencies` writes `deoptkit-vscode-0.0.0.vsix` (8 files, about 147 KB) and `vp exec vsce ls --no-dependencies` lists only:
+
+  ```
+  CHANGELOG.md
+  LICENSE.md
+  package.json
+  README.md
+  dist/extension.cjs
+  dist/server.cjs
+  ```
+
+  Nothing under `node_modules` or `src` ships.
+
+- Spawning `node extensions/deoptkit-vscode/dist/server.cjs --findings nope.json`, sending a framed LSP `initialize` request on stdin, returns:
+
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "capabilities": { "textDocumentSync": 0 },
+      "serverInfo": { "name": "deoptkit", "version": "0.1.0" }
+    }
+  }
+  ```
+
+Not verified, and left to the maintainer: the in-editor check, which needs a display. Install the vsix with `code --install-extension extensions/deoptkit-vscode/deoptkit-vscode-0.0.0.vsix`, open a workspace whose `.deopt/findings.json` annotates a source file, and confirm that squiggles and Problems entries appear on the annotated lines and that the findings downgrade to Information after editing that file. Also exercise the server selection once each: with `deoptkit` in the workspace's `node_modules`, without it (the bundled server), and with `deoptkit.serverCommand` set.

@@ -14,6 +14,7 @@ A V8 deoptimization toolkit for JavaScript and TypeScript on Node.js — visibil
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
 | [`deoptkit`](./packages/deoptkit)                   | MCP server, findings engine, benchmark harness, and fix-verify comparison                                                                              | [npm](https://www.npmjs.com/package/deoptkit) |
 | [deoptkit (Claude Code plugin)](./plugins/deoptkit) | Install with `/plugin marketplace add Saeris/deoptkit`, then `/plugin install deoptkit@deoptkit`: registers the MCP server and adds the workflow skill | —                                             |
+| [`deoptkit-vscode`](./extensions/deoptkit-vscode)   | VSCode extension (marketplace id `saeris.deoptkit-vscode`): starts `deoptkit lsp` and shows findings as inline diagnostics                             | —                                             |
 
 ## Contributing
 

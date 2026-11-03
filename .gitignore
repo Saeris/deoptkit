@@ -75,6 +75,7 @@ storybook-static/
 .next/
 .cache/
 **/dist/
+**/*.vsix
 coverage/
 **/public/workbox-*.js*
 **/public/sw.js*
@@ -83,6 +84,9 @@ results
 yarn-error.log
 .idea
 .vscode
+!extensions/*/.vscode/
+extensions/*/.vscode/*
+!extensions/*/.vscode/launch.json
 schema.json
 
 cypress/e2e/build

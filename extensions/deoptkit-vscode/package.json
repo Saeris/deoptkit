@@ -1,0 +1,63 @@
+{
+  "name": "deoptkit-vscode",
+  "displayName": "deoptkit",
+  "version": "0.0.0",
+  "description": "V8 deoptimization findings from deoptkit (megamorphic inline caches, deopt loops, hidden-class churn) as inline diagnostics",
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "v8",
+    "performance",
+    "deoptimization",
+    "profiling"
+  ],
+  "license": "MIT",
+  "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Saeris/deoptkit.git",
+    "directory": "extensions/deoptkit-vscode"
+  },
+  "publisher": "saeris",
+  "main": "./dist/extension.cjs",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "workspaceContains:.deopt/findings.json"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "deoptkit",
+      "properties": {
+        "deoptkit.findingsPath": {
+          "type": "string",
+          "default": ".deopt/findings.json",
+          "description": "The findings interchange written by `deoptkit ci` or the deoptkit/vitest preset, relative to the workspace folder."
+        },
+        "deoptkit.serverCommand": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Command that starts the language server, e.g. [\"npx\", \"deoptkit\", \"lsp\"]. Leave empty to use the workspace's installed deoptkit, or the server bundled with this extension when there is none."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "vp pack && vp exec vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.125.0",
+    "deoptkit": "workspace:*",
+    "vscode-languageclient": "^11.0.0"
+  }
+}

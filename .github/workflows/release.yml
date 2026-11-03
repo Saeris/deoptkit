@@ -57,6 +57,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
           # Yarn 4 corrupts the tarball path Bumpy captures from stdout if
           # color codes are enabled. NO_COLOR alone is not enough for Yarn 4.
           NO_COLOR: "1"
@@ -78,11 +79,14 @@ jobs:
           cache: true
           registry-url: "https://registry.npmjs.org"
 
+      # The extension's `vp pack` bundles `deoptkit/lsp` from packages/deoptkit/dist,
+      # so the engine must be built before bumpy builds the extension.
       - run: vp -C packages/deoptkit pack
 
       - run: vp dlx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
           BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
           NO_COLOR: "1"
           YARN_ENABLE_COLORS: "false"

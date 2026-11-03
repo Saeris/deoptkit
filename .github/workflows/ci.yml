@@ -32,5 +32,9 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: true
 
+      # The type-aware lint resolves `deoptkit/lsp` through the built `types` export;
+      # without dist/ its types silently become `any`.
+      - run: vp -C packages/deoptkit pack
+      - run: vp -C extensions/deoptkit-vscode pack
       - run: vp check
       - run: vp test

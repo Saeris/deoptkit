@@ -127,7 +127,7 @@ The server watches the file and republishes on every change, so `vitest bench --
 - **Neovim**: `vim.lsp.start({ name = "deoptkit", cmd = { "npx", "deoptkit", "lsp" }, root_dir = vim.fn.getcwd() })`
 - **Helix / Zed**: register a language server with command `npx deoptkit lsp` and attach it to `javascript`/`typescript`.
 
-**VSCode** has no built-in generic LSP client, so a dedicated deoptkit extension is the tracked next step ([BENCHMARKING.md §8](../../docs/BENCHMARKING.md), v1.4). Until then, VSCode + Claude Code users get the same findings through the **MCP server** — the agent reads them via `get_findings` and reports them in chat, which needs no editor setup at all.
+**VSCode**: install the `deoptkit` extension (marketplace id `saeris.deoptkit-vscode`). It starts `deoptkit lsp` for the first workspace folder and shows findings as squiggles and Problems entries. It runs the workspace's installed `deoptkit` (`node_modules/deoptkit/dist/main.mjs`, the same version that wrote `findings.json`) and falls back to the server bundled with the extension when there is none. Two settings: `deoptkit.findingsPath` (default `.deopt/findings.json`, relative to the workspace folder) and `deoptkit.serverCommand` (a command such as `["npx", "deoptkit", "lsp"]` that replaces both server choices). VSCode + Claude Code users also get the same findings through the **MCP server** — the agent reads them via `get_findings` and reports them in chat, which needs no editor setup at all.
 
 ## CI regression gating
 

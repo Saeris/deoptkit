@@ -24,6 +24,7 @@
     "@types/node": "^26.6.6",
     "@varlock/bumpy": "^1.19.0",
     "@vitest/coverage-v8": "catalog:",
+    "@vscode/vsce": "^4.1.0",
     "typescript": "6.0.3",
     "vite-plus": "catalog:",
     "vitest": "catalog:"
