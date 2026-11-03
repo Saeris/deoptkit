@@ -8,7 +8,7 @@ export default defineConfig({
   // ── Builds (tsdown) ─────────────────────────────────────────────────
   pack: {
     entry: {
-      index: manifest.exports["."].import.development,
+      index: "./src/index.ts",
       main: "./src/main.ts",
       harness: "./src/harness/index.ts",
       vitest: "./src/vitest/index.ts",

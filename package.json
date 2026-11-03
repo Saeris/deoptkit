@@ -32,42 +32,36 @@
   "exports": {
     ".": {
       "import": {
-        "development": "./src/index.ts",
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
       }
     },
     "./harness": {
       "import": {
-        "development": "./src/harness/index.ts",
         "types": "./dist/harness.d.mts",
         "default": "./dist/harness.mjs"
       }
     },
     "./vitest": {
       "import": {
-        "development": "./src/vitest/index.ts",
         "types": "./dist/vitest.d.mts",
         "default": "./dist/vitest.mjs"
       }
     },
     "./vitest/global-setup": {
       "import": {
-        "development": "./src/vitest/globalSetup.ts",
         "types": "./dist/vitest-global-setup.d.mts",
         "default": "./dist/vitest-global-setup.mjs"
       }
     },
     "./bench": {
       "import": {
-        "development": "./src/bench/index.ts",
         "types": "./dist/bench.d.mts",
         "default": "./dist/bench.mjs"
       }
     },
     "./serve": {
       "import": {
-        "development": "./src/serve/index.ts",
         "types": "./dist/serve.d.mts",
         "default": "./dist/serve.mjs"
       }
