@@ -16,7 +16,8 @@ export default defineConfig({
       vitest: "./src/vitest/index.ts",
       "vitest-global-setup": "./src/vitest/globalSetup.ts",
       bench: "./src/bench/index.ts",
-      serve: "./src/serve/index.ts"
+      serve: "./src/serve/index.ts",
+      lsp: "./src/lsp/server.ts"
     },
     clean: true,
     format: [`esm`],

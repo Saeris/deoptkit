@@ -67,6 +67,12 @@
         "default": "./dist/serve.mjs"
       }
     },
+    "./lsp": {
+      "import": {
+        "types": "./dist/lsp.d.mts",
+        "default": "./dist/lsp.mjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "peerDependencies": {
