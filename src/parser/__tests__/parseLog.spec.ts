@@ -1,9 +1,9 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { LogModel } from "../../model/logModel";
-import { parseDeoptLocation, parseLog } from "../parseLog";
+import { normalizeScriptUrl, parseDeoptLocation, parseLog } from "../parseLog";
 import { generateWorkloadLog } from "./helpers";
 
 describe("parseLog on a real generated V8 log", () => {
@@ -187,6 +187,77 @@ describe("parseDeoptLocation", () => {
     expect(
       parseDeoptLocation(`<${url}:10:14> inlined at oops`)
     ).toBeUndefined();
+  });
+
+  // Deopt sites feed the same finding identity as code entries, so a loader query on
+  // either the site or an inlining caller must be dropped or baselines never match.
+  it("drops loader queries from the site and every inlining caller", () => {
+    const parsed = parseDeoptLocation(
+      "<file:///C:/app/lib.ts?vitest=123:10:14> inlined at <file:///C:/app/lib.ts?vitest=123:16:12>"
+    );
+    expect(parsed?.site.file).toBe("file:///C:/app/lib.ts");
+    expect(parsed?.inlinedAt[0]?.file).toBe("file:///C:/app/lib.ts");
+  });
+});
+
+describe("normalizeScriptUrl", () => {
+  it("strips a loader cache-busting query from a file URL", () => {
+    expect(normalizeScriptUrl("file:///C:/app/lib.ts?vitest=123")).toBe(
+      "file:///C:/app/lib.ts"
+    );
+  });
+
+  it("strips a query and fragment together", () => {
+    expect(normalizeScriptUrl("file:///app/x.js?t=1#frag")).toBe(
+      "file:///app/x.js"
+    );
+  });
+
+  it("leaves non-file URLs untouched", () => {
+    expect(normalizeScriptUrl("node:internal/x")).toBe("node:internal/x");
+  });
+
+  it("leaves a file URL without a query untouched", () => {
+    expect(normalizeScriptUrl("file:///C:/app/lib.ts")).toBe(
+      "file:///C:/app/lib.ts"
+    );
+  });
+});
+
+describe("parseLog with loader query strings in script URLs", () => {
+  let fixtureDir: string;
+
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-query-"));
+  });
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  // Vitest's native loader appends `?vitest=<timestamp>` to every bench file it
+  // imports; without normalization each run produces a different finding identity, so
+  // CI baselines never match and the source file cannot be found on disk.
+  it("reports the code map, IC sites, and script sources under the bare URL", async () => {
+    const path = join(fixtureDir, "query.v8.log");
+    await writeFile(
+      path,
+      [
+        "v8-version,14,6,0,0,-node.1,0",
+        "code-creation,JS,10,50,0x1000,64,getX file:///C:/app/lib.ts?vitest=123:2:49,0x2fcf,+'",
+        "script-source,84,file:///C:/app/lib.ts?vitest=123,export const getX = (o) => o.x;",
+        "LoadIC,0x1010,100,2,49,1,N,0x2,x",
+        ""
+      ].join("\n")
+    );
+    const model = await parseLog(path);
+    const bare = "file:///C:/app/lib.ts";
+    expect(model.ics[0]?.file).toBe(bare);
+    expect(model.scripts.has(bare)).toBe(true);
+    expect(model.functionIndex[0]?.file).toBe(bare);
+    expect([...model.scripts.keys()].some((key) => key.includes("?"))).toBe(
+      false
+    );
   });
 });
 

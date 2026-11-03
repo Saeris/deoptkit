@@ -30,6 +30,17 @@ const IC_COMMANDS = [
 /** Trailing `url:line:column` in a code entry name, e.g. `getX file:///a/b.js:6:14`. */
 const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
 
+/**
+ * Loaders append cache-busting queries to file URLs (Vitest `?vitest=<ts>`, Vite
+ * `?t=`); they do not identify a different script, so drop them at the model
+ * boundary. Non-file URLs pass through untouched.
+ */
+export const normalizeScriptUrl = (url: string): string => {
+  if (!url.startsWith("file:")) return url;
+  const cut = url.search(/[?#]/u);
+  return cut === -1 ? url : url.slice(0, cut);
+};
+
 const DEOPT_POSITION_RE = /^<(?<file>.+):(?<line>\d+):(?<column>\d+)>$/u;
 
 /**
@@ -45,7 +56,7 @@ export const parseDeoptLocation = (
     const match = DEOPT_POSITION_RE.exec(segment);
     if (!match?.groups) return undefined;
     positions.push({
-      file: match.groups["file"] ?? "",
+      file: normalizeScriptUrl(match.groups["file"] ?? ""),
       line: Number(match.groups["line"]),
       column: Number(match.groups["column"])
     });
@@ -91,7 +102,7 @@ const splitEntryName = (
     if (match?.groups) {
       return {
         functionName: name.slice(0, spaceIndex),
-        file: match.groups["file"],
+        file: normalizeScriptUrl(match.groups["file"] ?? ""),
         line: Number(match.groups["line"]),
         column: Number(match.groups["column"])
       };
@@ -283,7 +294,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       if (!info.tiers.includes(tier)) info.tiers.push(tier);
     },
     "script-source": ([, url, source]): void => {
-      if (url !== undefined && source !== undefined) scripts.set(url, source);
+      if (url !== undefined && source !== undefined)
+        scripts.set(normalizeScriptUrl(url), source);
     },
     "code-deopt": ([
       time,
