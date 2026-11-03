@@ -11,9 +11,9 @@ describe("bench/parse.bench.mjs", () => {
     ensureDist();
   }, 60_000);
 
-  // The bench is meant to run under `deoptkit ci` on one CI lane; this proves on every
-  // lane that the dogfood subject still runs against the shipped entry points, so a
-  // renamed export or a broken harness import fails here, not only in CI.
+  // The deoptkit ci gate runs this bench on one CI matrix lane (see .github/workflows/ci.yml);
+  // this test proves on every lane that the subject still runs against the shipped entry
+  // points, so a renamed export or a broken harness import fails here, not only in the gate.
   it("runs against the built package", () => {
     const run = spawnSync(process.execPath, ["bench/parse.bench.mjs"], {
       cwd: PACKAGE,

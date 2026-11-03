@@ -143,6 +143,8 @@ Identities use paths relative to the directory `deoptkit ci` runs in, so run it 
 
 Findings that sit on a threshold can flicker between runs; build the baseline with `deoptkit ci --accumulate` over a few runs so that only genuinely new sites fail the gate.
 
+This repository gates itself the same way: `bench/parse.bench.mjs` parses a fixture log under observation and `.github/workflows/ci.yml` runs `deoptkit ci` over it against the committed baseline.
+
 ## What the signals mean
 
 | Signal             | What it tells you                                                                                                                                                               |

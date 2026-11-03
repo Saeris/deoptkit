@@ -38,3 +38,11 @@ jobs:
       - run: vp -C extensions/deoptkit-vscode pack
       - run: vp check
       - run: vp test
+
+      # deoptkit observing its own parser (docs/BENCHMARKING.md §5, §7): a structural
+      # regression gate over bench/parse.bench.mjs against the committed baseline in
+      # packages/deoptkit/.deopt/baselines. One lane only: each V8 major optimizes
+      # differently and the baseline is a snapshot of the LTS lane's behavior.
+      - if: matrix.node-version == 'lts' && matrix.os == 'ubuntu-latest'
+        working-directory: packages/deoptkit
+        run: node dist/main.mjs ci bench/parse.bench.mjs
