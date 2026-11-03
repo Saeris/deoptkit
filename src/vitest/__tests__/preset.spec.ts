@@ -1,9 +1,18 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { generateWorkloadLog } from "../../parser/__tests__/helpers";
 import { setup, teardown } from "../globalSetup";
+import type { DeoptKitFindingsFile } from "../globalSetup";
 import { deoptKit } from "../index";
 
 describe("deoptKit vitest preset", () => {
@@ -42,9 +51,12 @@ describe("deoptKit vitest preset", () => {
     );
   });
 
-  it("writes a manifest of produced logs on teardown", async () => {
+  // The findings interchange is what the LSP reads; a teardown that writes the
+  // manifest but no findings leaves editors blind to everything the bench observed.
+  it("writes a manifest and the findings interchange for produced logs on teardown", async () => {
     deoptKit({ outDir });
-    await writeFile(join(outDir, "v8-12345.log"), "v8-version,14,6,0,0\n");
+    const logfile = join(outDir, "v8-12345.log");
+    await rename(generateWorkloadLog("map-churn", outDir), logfile);
     await writeFile(join(outDir, "unrelated.txt"), "ignore me\n");
     setup({ config: { coverage: { enabled: false } } });
     await teardown();
@@ -55,8 +67,17 @@ describe("deoptKit vitest preset", () => {
       logfiles: string[];
     };
     expect(manifest.outDir).toBe(outDir);
-    expect(manifest.logfiles).toEqual([join(outDir, "v8-12345.log")]);
-  });
+    expect(manifest.logfiles).toEqual([logfile]);
+    const payload = JSON.parse(
+      await readFile(join(outDir, "findings.json"), "utf8")
+    ) as DeoptKitFindingsFile;
+    expect(payload.findings.length).toBeGreaterThan(0);
+    for (const finding of payload.findings)
+      expect(finding.script).toBe(logfile);
+    expect(payload.findings.some(({ kind }) => kind === "megamorphic-ic")).toBe(
+      true
+    );
+  }, 60_000);
 
   // The preset's per-process logs depend on V8 actually expanding %p to the pid;
   // if a V8 upgrade drops the placeholder, this catches it before users do.

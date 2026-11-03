@@ -2,10 +2,11 @@ import type { SpawnSyncReturns } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { computeFindings } from "../../analysis/findings";
+import { toDiagnostics } from "../../lsp/server";
 import type { LogModel } from "../../model/logModel";
 import { parseLog } from "../../parser/parseLog";
 import { SourceMapResolver } from "../../sourcemaps/resolver";
-import type { DeoptKitManifest } from "../globalSetup";
+import type { DeoptKitFindingsFile, DeoptKitManifest } from "../globalSetup";
 import { createE2eProject, ensureDist } from "./e2eProject";
 import type { E2eProject } from "./e2eProject";
 
@@ -104,5 +105,28 @@ describe("deoptKit vitest preset, end to end", () => {
     expect(original?.file.endsWith("lib.ts")).toBe(true);
     // getX is declared on line 2 of lib.ts.
     expect(original?.line).toBe(2);
+  });
+
+  // The README promises that `vitest bench --watch` alone keeps the editor squiggles
+  // fresh. That only holds if the teardown writes the interchange the LSP reads,
+  // already source-mapped; a manifest alone leaves the editor blind.
+  it("the teardown writes findings.json that the LSP can publish", () => {
+    const payload = JSON.parse(
+      readFileSync(`${project.outDir}/findings.json`, "utf8")
+    ) as DeoptKitFindingsFile;
+    const site = payload.findings.find(
+      (finding) =>
+        finding.kind === "megamorphic-ic" && finding.evidence["key"] === "x"
+    );
+    expect(site?.original?.file.endsWith("lib.ts")).toBe(true);
+    expect(site?.original?.line).toBe(2);
+
+    const diagnostics = toDiagnostics(payload, () => false);
+    const uri = [...diagnostics.keys()].find((key) => key.endsWith("lib.ts"));
+    const [first] = diagnostics.get(uri ?? "") ?? [];
+    expect(uri).toBeDefined();
+    // LSP lines are 0-based; getX is on line 2 of lib.ts.
+    expect(first?.range.start.line).toBe(1);
+    expect(first?.code).toBe("megamorphic-ic");
   });
 });

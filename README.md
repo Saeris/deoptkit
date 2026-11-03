@@ -118,7 +118,7 @@ Full recipes, including SSR apps (Next/Astro via `deoptkit/serve`) and builds, l
 deoptkit lsp --findings .deopt/findings.json
 ```
 
-The server watches the file and republishes on every change, so `vitest bench --watch` → re-run `ci` → squiggles update live. It publishes diagnostics at source-mapped original positions with the explanation and suggested fix in the hover; severity maps from the finding score (error ≥ 60, warning ≥ 25, info below), and findings older than the file they annotate downgrade to info with a re-run hint.
+The server watches the file and republishes on every change, so `vitest bench --watch` rewrites `.deopt/findings.json` on every run and the squiggles update live. It publishes diagnostics at source-mapped original positions with the explanation and suggested fix in the hover; severity maps from the finding score (error ≥ 60, warning ≥ 25, info below), and findings older than the file they annotate downgrade to info with a re-run hint.
 
 **Editor wiring.** The server speaks standard LSP (`initialize` + push-model `publishDiagnostics`), so any editor with a generic LSP client works today:
 

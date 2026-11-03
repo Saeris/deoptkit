@@ -1,5 +1,9 @@
 import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { computeFindings } from "../analysis/findings";
+import type { Finding } from "../analysis/findings";
+import { parseLog } from "../parser/parseLog";
+import { SourceMapResolver } from "../sourcemaps/resolver";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -29,6 +33,18 @@ export interface DeoptKitManifest {
   logfiles: string[];
 }
 
+/** The findings interchange `deoptkit lsp` reads; `deoptkit ci` writes the same shape. */
+export interface DeoptKitFindingsFile {
+  createdAt: string;
+  outDir: string;
+  findings: Array<
+    Finding & {
+      original?: { file: string; line: number; column: number };
+      script: string;
+    }
+  >;
+}
+
 /**
  * Vitest global setup registered by the `deoptkit/vitest` preset. Refuses coverage
  * runs — coverage instrumentation changes the optimization behavior being measured.
@@ -42,7 +58,10 @@ export const setup = (project?: unknown): void => {
   }
 };
 
-/** After the bench run, list the V8 logs the workers produced for `load_manifest`. */
+/**
+ * After the bench run, list the V8 logs the workers produced for `load_manifest` and
+ * write their findings (with source-mapped original positions) for `deoptkit lsp`.
+ */
 export const teardown = async (): Promise<void> => {
   const outDir = requireOutDir();
   const entries = await readdir(outDir);
@@ -56,5 +75,32 @@ export const teardown = async (): Promise<void> => {
   await writeFile(
     join(outDir, "manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`
+  );
+
+  // One log at a time: a parsed model is tens of MB. A log that cannot be analyzed
+  // must not fail the bench run, so report it and keep the rest.
+  const findings: DeoptKitFindingsFile["findings"] = [];
+  for (const logfile of manifest.logfiles) {
+    try {
+      const model = await parseLog(logfile);
+      const resolver = new SourceMapResolver(model);
+      for (const found of computeFindings(model)) {
+        const original = resolver.resolve(found.file, found.line, found.column);
+        findings.push(
+          original
+            ? { ...found, original, script: logfile }
+            : { ...found, script: logfile }
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `deoptkit: could not analyze ${logfile}: ${message}\n`
+      );
+    }
+  }
+  await writeFile(
+    join(outDir, "findings.json"),
+    `${JSON.stringify({ createdAt: new Date().toISOString(), outDir, findings } satisfies DeoptKitFindingsFile, null, 2)}\n`
   );
 };
