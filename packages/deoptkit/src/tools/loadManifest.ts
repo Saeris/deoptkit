@@ -13,7 +13,8 @@ export const loadManifest = defineTool({
   description:
     "Load every V8 log listed in a deoptkit manifest (written by the deoptkit/vitest bench " +
     "preset to <outDir>/manifest.json) as sessions. Bench cases wrapped with benchObserved " +
-    "expose <name>_start/<name>_end markers for the fromMark/toMark window filters.",
+    "expose <name>_start/<name>_end markers for the fromMark/toMark window filters. " +
+    "The response's sessionIds can be passed straight to get_findings.",
   annotations: { readOnlyHint: true, idempotentHint: false },
   schema: v.object({
     path: v.pipe(
@@ -66,9 +67,16 @@ export const loadManifest = defineTool({
         ...(await loadLogFile(logfile, ctx, workspaceRoot))
       }))
     );
-    const loaded = outcomes.filter((outcome) => !("error" in outcome));
+    const loaded = outcomes.flatMap((outcome) =>
+      "error" in outcome ? [] : [outcome]
+    );
+    // The agent should never have to pluck ids out of the per-log outcomes.
     return jsonResult(
-      { loadedCount: loaded.length, sessions: outcomes },
+      {
+        loadedCount: loaded.length,
+        sessionIds: loaded.map(({ sessionId }) => sessionId),
+        sessions: outcomes
+      },
       loaded.length === 0 ? { isError: true } : undefined
     );
   }

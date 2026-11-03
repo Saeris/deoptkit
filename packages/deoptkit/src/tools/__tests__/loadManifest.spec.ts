@@ -41,6 +41,8 @@ describe("load_manifest", () => {
     expect(result.isError ?? false).toBe(false);
     const payload = payloadOf(result);
     expect(payload["loadedCount"]).toBe(1);
+    // The ids are what get_findings { sessionIds } takes; failed logs have none.
+    expect(payload["sessionIds"]).toEqual(["s1"]);
     const outcomes = payload["sessions"] as Record<string, unknown>[];
     expect(outcomes).toHaveLength(2);
     expect(outcomes[0]?.["sessionId"]).toBe("s1");

@@ -16,6 +16,16 @@ export const sessionIdSchema = v.pipe(
   v.description("Session id returned by load_log (see list_sessions)")
 );
 
+export const sessionIdsSchema = v.optional(
+  v.pipe(
+    v.array(sessionIdSchema),
+    v.minLength(1),
+    v.description(
+      "Several session ids (for example from load_manifest); findings are merged by identity across them"
+    )
+  )
+);
+
 export const limitSchema = v.optional(
   v.pipe(
     v.number(),
