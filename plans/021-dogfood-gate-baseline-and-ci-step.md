@@ -2,14 +2,14 @@
 
 > **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: confirm plans 018 and 020 are DONE in `plans/README.md`; `ls packages/deoptkit/bench/parse.bench.mjs` succeeds; `ls packages/deoptkit/.deopt` fails (nothing committed yet); `grep -c "accumulate" packages/deoptkit/src/cli/ci.ts` ≥ 3; `grep -c "distinctKeys" packages/deoptkit/src/parser/parseLog.ts` ≥ 1. On a mismatch, STOP.
+> **Drift check (run first)**: confirm plans 018, 020 and 022 are DONE in `plans/README.md`; `ls packages/deoptkit/bench/parse.bench.mjs` succeeds; `ls packages/deoptkit/.deopt` fails (nothing committed yet); `grep -c "accumulate" packages/deoptkit/src/cli/ci.ts` ≥ 3; `grep -c "distinctKeys" packages/deoptkit/src/parser/parseLog.ts` ≥ 1; `grep -c "normalizeV8Name" packages/deoptkit/src/parser/parseLog.ts` ≥ 2. On a mismatch, STOP.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: plans/018-dogfood-ci-gate.md (part 1), plans/020-keyed-ic-sites-and-soft-feedback-deopts.md
+- **Depends on**: plans/018-dogfood-ci-gate.md (part 1), plans/020-keyed-ic-sites-and-soft-feedback-deopts.md, plans/022-stable-identities-and-shape-stable-parser.md
 - **Category**: direction, dx
 - **Planned at**: commit `1bfded1`, 2026-11-03
 
@@ -28,7 +28,8 @@ Paths relative to the repository root.
 - Root `.gitignore` ends with `.deopt/*` and `!.deopt/baselines/`.
 - `.github/workflows/ci.yml`: matrix (`node-version: ["22", "lts", "latest"]` on `ubuntu-latest`, plus `lts` on `windows-latest`); steps checkout, setup-vp, `vp -C packages/deoptkit pack`, `vp -C extensions/deoptkit-vscode pack`, `vp check`, `vp test`.
 - Package README, "CI regression gating": three-command example, the relative-identity sentence (plan 011), the `--accumulate` sentence (plan 018).
-- Plan 018's last accumulated baseline (not committed) had 13 entries: churn in `computeFindings`, `finding`, `readLog`, and the server chunk's top-level code (source-mapped to `src/tools/listIcs.ts`), keyed megamorphic ICs in `parseLog.ts` (`map`, `tick`), `score`, `finding`, `parseIcState`, `readLog`, and the `#indexBefore` deopt loop. After plan 020 the `tick` entries collapse to one per IC type and the `#indexBefore` entry becomes a soft deopt (not gated).
+- Plan 018's last accumulated baseline (not committed) had 13 entries: churn in `computeFindings`, `finding`, `readLog`, and the server chunk's top-level code (source-mapped to `src/tools/listIcs.ts`), keyed megamorphic ICs in `parseLog.ts` (`map`, `tick`), `score`, `finding`, `parseIcState`, `readLog`, and the `#indexBefore` deopt loop.
+- The first attempt at this plan (after 020, before 022) could not converge: identities carried per-process V8 symbol hashes, anonymous functions pooled into one `map-churn` entry per file, the `tick` and `map` counters' keyed sites flickered with the sampled VM states, and `#indexBefore` flickered between one and two eager deopts. Plan 022 fixed each at the source. After it, no `|tick|` or `|map|` megamorphic entries exist (the counters are `Map`s), no identity contains `hash`, and a one-bailout-per-tier site reports as `eager-deopt`, which is not gated.
 
 Conventions: soft-wrapped markdown; no attribution lines.
 
@@ -65,7 +66,7 @@ Conventions: soft-wrapped markdown; no attribution lines.
 
 From `packages/deoptkit`, after `vp -C . pack`: run `node dist/main.mjs ci --accumulate bench/parse.bench.mjs` five times (the first prints `no baseline — wrote N finding(s)`), then the plain gate three times. Every plain run must exit 0 and print no `NEW finding(s)` line (notices about baselined findings that no longer occur are fine). If a plain run reports NEW, run two more accumulate rounds and repeat the three plain runs once; if NEW still appears, STOP and report its identities.
 
-Inspect the baseline: no `file:///`, no `node_modules`, no drive letter; the `tick` keyed site appears as `megamorphic-ic|src/parser/parseLog.ts|tick|KeyedLoadIC` (and a `KeyedStoreIC` sibling), not per VM-state label; no `deopt-loop` entry whose summary mentions `Insufficient type feedback`.
+Inspect the baseline: no `file:///`, no `node_modules`, no drive letter; `grep -c " hash " <baseline>` → 0; no identity containing `|tick|` or `|map|` (the parser's counters are no longer keyed stores); no `map-churn` entry with an empty function name whose anchor is inside a named function (`"functionName": ""` entries must be module top-level code); no `deopt-loop` entry whose summary mentions `Insufficient type feedback` and none for `#indexBefore`.
 
 **Verify**: `git status --short` shows the baseline as the only untracked path under `.deopt/`; paste the `findings` array in NOTES.
 
