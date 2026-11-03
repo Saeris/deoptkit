@@ -49,10 +49,11 @@ export default defineConfig({
 
 /**
  * The tests resolve `deoptkit/*` through the package's real `exports` map, which
- * points at `dist/`; build it once if the checkout has not been packed yet.
+ * points at `dist/`. Always rebuild: a `dist/` left over from before the current
+ * source changes would make the project run stale code and pass or fail for the
+ * wrong reasons. `vp pack` takes about a second.
  */
 export const ensureDist = (): void => {
-  if (existsSync(join(REPO, "dist", "vitest.mjs"))) return;
   const result = spawnSync(
     process.execPath,
     [join(REPO, "node_modules", "vite-plus", "bin", "vp"), "pack"],
