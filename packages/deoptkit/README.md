@@ -141,6 +141,8 @@ Baselines contain identity-only structural findings (no line numbers, severities
 
 Identities use paths relative to the directory `deoptkit ci` runs in, so run it from the same project directory locally and in CI and the committed baseline matches everywhere.
 
+Findings that sit on a threshold can flicker between runs; build the baseline with `deoptkit ci --accumulate` over a few runs so that only genuinely new sites fail the gate.
+
 ## What the signals mean
 
 | Signal             | What it tells you                                                                                                                                                               |

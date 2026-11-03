@@ -59,6 +59,52 @@ describe("computeFindings scoring calibration", () => {
   });
 });
 
+describe("computeFindings user-code filter", () => {
+  // On Windows V8 logs CommonJS scripts with OS paths (C:\...\node_modules\ajv\dist\ajv.js)
+  // and ESM with file URLs, so a forward-slash-only test let dependency code through as
+  // user code and baselines filled with findings about code the user does not own.
+  it("excludes dependency code logged with Windows backslash paths", () => {
+    const icSite = (file: string): LogModel["ics"][number] => ({
+      type: "LoadIC",
+      file,
+      functionName: "dispatch",
+      line: 10,
+      column: 5,
+      key: "name",
+      worstState: "megamorphic",
+      transitions: Array.from({ length: 6 }, (_, index) => ({
+        time: index,
+        oldState: "polymorphic" as const,
+        newState: "megamorphic" as const,
+        mapAddress: "0x1"
+      }))
+    });
+    const model: LogModel = {
+      v8Version: "14.0.0",
+      ics: [
+        icSite("C:\\proj\\node_modules\\dep\\index.js"),
+        icSite("C:\\proj\\src\\app.js")
+      ],
+      deopts: [],
+      maps: {
+        createdCount: 0,
+        entries: new Map(),
+        eventCounts: {},
+        transitionSites: []
+      },
+      profile: { tickCount: 0, vmStates: {}, functions: [], samples: [] },
+      scripts: new Map(),
+      functionIndex: [],
+      markers: [],
+      codeEntryCount: 0,
+      warnings: { unknownCommands: {}, badLines: 0 }
+    };
+    expect(computeFindings(model).map(({ file }) => file)).toEqual([
+      "C:\\proj\\src\\app.js"
+    ]);
+  });
+});
+
 describe("computeFindings across the pathology fixtures", () => {
   let fixtureDir: string;
   let megamorphic: Finding[];

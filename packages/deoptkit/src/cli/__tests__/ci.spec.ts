@@ -42,6 +42,19 @@ describe("deoptkit ci", () => {
     });
   });
 
+  it("parses --accumulate and refuses it together with --update", async () => {
+    expect(parseCiArgs(["--accumulate", "x.mjs"])).toMatchObject({
+      accumulate: true,
+      update: false
+    });
+    // Both write the baseline but with opposite intent (replace vs. union): combining
+    // them is ambiguous, so it is a usage error rather than a silent precedence rule.
+    expect(parseCiArgs(["--update", "--accumulate", "x.mjs"])).toHaveProperty(
+      "error"
+    );
+    await expect(runCi(["--update", "--accumulate", "x.mjs"])).resolves.toBe(2);
+  });
+
   // The snapshot lifecycle: first run writes a baseline and passes; an unchanged run
   // stays clean; a regression (the shape-churning variant replacing the fixed one)
   // fails with exit 1; --update accepts it; the accepted state then passes.
@@ -86,6 +99,24 @@ describe("deoptkit ci", () => {
     // Fixing it again is not a failure — resolved findings only prompt an update notice.
     await copyFile(join(WORKLOAD_DIR, "map-churn-fixed.js"), app);
     await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // Findings at a threshold (a keyed IC with 4-5 transitions, a deopt site with exactly
+    // 2 eager deopts) flicker between runs; accumulating over several runs lets the gate
+    // fail only on genuinely new sites, which is the invariant it exists for. With the
+    // fixed variant back in place the churn entries no longer occur, yet --accumulate
+    // must keep them (--update would have emptied the baseline).
+    await expect(
+      runCi(["--out-dir", outDir, "--accumulate", app])
+    ).resolves.toBe(0);
+    const accumulated = JSON.parse(
+      await readFile(join(outDir, "baselines", baselines[0] ?? ""), "utf8")
+    ) as { findings: { identity: string }[] };
+    expect(accumulated.findings.length).toBeGreaterThanOrEqual(
+      accepted.findings.length
+    );
+    expect(accumulated.findings.map(({ identity }) => identity)).toEqual(
+      expect.arrayContaining(accepted.findings.map(({ identity }) => identity))
+    );
 
     // Every run rewrites the findings interchange the LSP and agents consume.
     const interchange = JSON.parse(

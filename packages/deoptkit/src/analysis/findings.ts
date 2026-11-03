@@ -26,11 +26,19 @@ export interface Finding {
   evidence: Record<string, unknown>;
 }
 
-/** Findings only cover the user's own code; engine internals are queryable via list tools. */
-export const isUserCode = (file: string | undefined): file is string =>
-  file !== undefined &&
-  !file.startsWith("node:") &&
-  !file.includes("/node_modules/");
+/**
+ * Findings only cover the user's own code; engine internals are queryable via list tools.
+ * On Windows V8 logs CommonJS scripts with OS paths (`C:\...\node_modules\ajv\dist\ajv.js`)
+ * and ESM with file URLs, so a forward-slash-only test let dependency code through as
+ * user code.
+ */
+export const isUserCode = (file: string | undefined): file is string => {
+  if (file === undefined) return false;
+  const normalized = file.replaceAll("\\", "/");
+  return (
+    !normalized.startsWith("node:") && !normalized.includes("/node_modules/")
+  );
+};
 
 export const FINDING_EXPLANATIONS: Record<
   FindingKind,

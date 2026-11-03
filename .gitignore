@@ -102,3 +102,7 @@ cypress/e2e/build
 profiles/
 *.cpuprofile
 .vitest/
+
+# deoptkit ci output: baselines are committed, the per-run interchange is not
+.deopt/*
+!.deopt/baselines/

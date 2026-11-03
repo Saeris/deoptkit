@@ -8,7 +8,7 @@ const USAGE = `deoptkit — V8 deoptimization toolkit
 
 Usage:
   deoptkit [mcp]                                    Start the MCP server on stdio (default)
-  deoptkit ci [--update] [--out-dir <dir>] <script.mjs> [...]
+  deoptkit ci [--update|--accumulate] [--out-dir <dir>] <script.mjs> [...]
                                                     Snapshot-gate structural findings against
                                                     checked-in baselines (exit 1 on new findings)
   deoptkit lsp [--findings <path>]                  Language Server publishing findings.json as

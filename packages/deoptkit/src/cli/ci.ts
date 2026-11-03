@@ -32,15 +32,22 @@ type Baseline = v.InferOutput<typeof baselineSchema>;
 export interface CiOptions {
   scripts: string[];
   update: boolean;
+  accumulate: boolean;
   outDir: string;
 }
 
 /** Exit codes: 0 = clean, 1 = new findings vs baseline, 2 = usage or run failure. */
 export const parseCiArgs = (args: string[]): CiOptions | { error: string } => {
-  const options: CiOptions = { scripts: [], update: false, outDir: ".deopt" };
+  const options: CiOptions = {
+    scripts: [],
+    update: false,
+    accumulate: false,
+    outDir: ".deopt"
+  };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index] ?? "";
     if (arg === "--update") options.update = true;
+    else if (arg === "--accumulate") options.accumulate = true;
     else if (arg === "--out-dir") {
       const value = args.at(++index);
       if (value === undefined) return { error: "--out-dir requires a value" };
@@ -48,10 +55,13 @@ export const parseCiArgs = (args: string[]): CiOptions | { error: string } => {
     } else if (arg.startsWith("-")) return { error: `Unknown flag: ${arg}` };
     else options.scripts.push(arg);
   }
+  if (options.update && options.accumulate) {
+    return { error: "--update and --accumulate cannot be combined" };
+  }
   if (options.scripts.length === 0) {
     return {
       error:
-        "Usage: deoptkit ci [--update] [--out-dir <dir>] <script.mjs> [...]"
+        "Usage: deoptkit ci [--update|--accumulate] [--out-dir <dir>] <script.mjs> [...]"
     };
   }
   return options;
@@ -72,13 +82,16 @@ const GATED_KINDS = new Set<string>([
 /**
  * Baselines are committed and compared on other machines, so identities must not
  * contain the checkout path: the file is rewritten relative to the working directory.
+ * Bundlers hash chunk names (`dist/parseLog-Ckn1Egq2.mjs`), which change on every
+ * build, while the source-mapped original path does not; a baseline must survive a
+ * rebuild, so the original file is preferred when the source maps resolve one.
  */
-const portable = (found: Finding): Finding => ({
+const portable = (found: LocatedFinding): Finding => ({
   ...found,
-  file: toWorkspacePath(found.file, process.cwd())
+  file: toWorkspacePath(found.original?.file ?? found.file, process.cwd())
 });
 
-const toEntries = (findings: Finding[]): BaselineEntry[] =>
+const toEntries = (findings: LocatedFinding[]): BaselineEntry[] =>
   findings
     .filter(({ kind }) => GATED_KINDS.has(kind))
     .map((found) => {
@@ -91,6 +104,23 @@ const toEntries = (findings: Finding[]): BaselineEntry[] =>
         summary: entry.summary
       };
     });
+
+/**
+ * Findings at a threshold (a keyed IC with 4-5 transitions, a deopt site with exactly
+ * 2 eager deopts) flicker between runs. Accumulating over several runs lets the gate
+ * fail only on genuinely new sites, which is the invariant it exists for. Existing
+ * entries come first and win on identity.
+ */
+const mergeEntries = (
+  existing: BaselineEntry[],
+  current: BaselineEntry[]
+): BaselineEntry[] => {
+  const merged = new Map(existing.map((entry) => [entry.identity, entry]));
+  for (const entry of current) {
+    if (!merged.has(entry.identity)) merged.set(entry.identity, entry);
+  }
+  return [...merged.values()];
+};
 
 const baselinePathFor = (outDir: string, script: string): string => {
   const slug = relative(process.cwd(), resolve(script)).replace(
@@ -177,7 +207,9 @@ export const runCi = async (args: string[]): Promise<number> => {
     const baselinePath = baselinePathFor(options.outDir, script);
     const baseline = await readBaseline(baselinePath);
 
-    const writeCurrent = async (): Promise<void> => {
+    const writeCurrent = async (
+      written: BaselineEntry[] = entries
+    ): Promise<void> => {
       await mkdir(join(options.outDir, "baselines"), { recursive: true });
       await writeFile(
         baselinePath,
@@ -185,7 +217,7 @@ export const runCi = async (args: string[]): Promise<number> => {
           {
             createdAt: new Date().toISOString(),
             script,
-            findings: entries
+            findings: written
           } satisfies Baseline,
           null,
           2
@@ -216,6 +248,16 @@ export const runCi = async (args: string[]): Promise<number> => {
       await writeCurrent();
       log(
         `${basename(script)}: baseline updated (${entries.length} finding(s); +${introduced.length} new, -${resolved.length} resolved)`
+      );
+      continue;
+    }
+
+    if (options.accumulate) {
+      const merged = mergeEntries(baseline.findings, entries);
+      await writeCurrent(merged);
+      const added = merged.filter(({ identity }) => !known.has(identity));
+      log(
+        `${basename(script)}: baseline accumulated (${merged.length} finding(s); +${added.length} new)`
       );
       continue;
     }

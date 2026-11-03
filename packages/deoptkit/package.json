@@ -88,6 +88,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
+    "bench": "node dist/main.mjs ci bench/parse.bench.mjs",
     "build": "vp pack",
     "test": "vp test"
   },
