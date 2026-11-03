@@ -16,6 +16,7 @@ import type {
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
 import { readLog } from "./logReader";
+import { decodeSourceInfo, positionAt, ScriptPositions } from "./sourceInfo";
 
 /** IC event commands as emitted by `--log-ic` on modern V8. */
 const IC_COMMANDS = [
@@ -124,6 +125,27 @@ const parseDeoptKind = (raw: string): DeoptKind => {
     : "unknown";
 };
 
+/** Source identity of a function, as named by its `code-creation` line. */
+interface FunctionIdentity {
+  functionName: string;
+  file: string | undefined;
+  line: number | undefined;
+  column: number | undefined;
+}
+
+/** A function a pc executes in; code inlined into a caller yields one frame per level. */
+interface Frame extends FunctionIdentity {
+  /** Where inside that function the pc is, when the script's source is known. */
+  at: { line: number; column: number } | undefined;
+}
+
+/** Bound on the inlining walk, so a malformed parent chain cannot loop forever. */
+const MAX_INLINING_DEPTH = 64;
+
+/** TurboFan (`*`) or Maglev (`+`) code, whose logged pcs are machine-code addresses. */
+const isOptimizedMachineCode = (entry: CodeEntry): boolean =>
+  entry.marker !== undefined && /[*+]/u.test(entry.marker);
+
 /** Parse a v8.log into the queryable model. Unknown events are counted, never fatal. */
 export const parseLog = async (path: string): Promise<LogModel> => {
   let v8Version = "unknown";
@@ -141,6 +163,114 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   const scripts = new Map<string, string>();
   const functionIndex = new Map<string, FunctionInfo>();
   const markers: Marker[] = [];
+  /** SharedFunctionInfo address -> function; inlining tables name inlined functions by sfi. */
+  const sfiIndex = new Map<string, FunctionIdentity>();
+  let codeSourceInfoCount = 0;
+  const scriptPositions = new Map<string, ScriptPositions>();
+
+  /** Line table of a script, built on first use from its logged source. */
+  const positionsFor = (
+    url: string | undefined
+  ): ScriptPositions | undefined => {
+    if (url === undefined) return undefined;
+    let positions = scriptPositions.get(url);
+    if (!positions) {
+      const source = scripts.get(url);
+      if (source === undefined) return undefined;
+      positions = new ScriptPositions(source);
+      scriptPositions.set(url, positions);
+    }
+    return positions;
+  };
+
+  /** Frames for a pc, innermost first: inlined functions (via the entry's tables) then the entry's own function. */
+  const resolvePc = (
+    pc: bigint,
+    kind: "sampled" | "return"
+  ): { entry: CodeEntry; frames: Frame[] } | undefined => {
+    const entry = codeMap.find(pc);
+    if (!entry) return undefined;
+    const own = (at: Frame["at"]): Frame => ({
+      functionName: entry.functionName,
+      file: entry.file,
+      line: entry.line,
+      column: entry.column,
+      at
+    });
+    // For TurboFan and Maglev code an IC or map event's pc and every non-top sampled
+    // frame are return addresses, one instruction past the call, and V8 resolves them
+    // one byte back; interpreted and baseline frames log bytecode positions, which are
+    // exact, and the top sampled pc is exact too.
+    const raw = Number(pc - entry.start);
+    const offset =
+      kind === "return" && isOptimizedMachineCode(entry)
+        ? Math.max(0, raw - 1)
+        : raw;
+    const { source } = entry;
+    const position =
+      source === undefined ? undefined : positionAt(source, offset);
+    if (source === undefined || position === undefined)
+      return { entry, frames: [own(undefined)] };
+    const frames: Frame[] = [];
+    let { scriptOffset, inliningId: id } = position;
+    for (let steps = 0; id >= 0 && steps < MAX_INLINING_DEPTH; steps += 1) {
+      const inlined = source.inlining.at(id);
+      if (!inlined) break;
+      const sfi =
+        inlined.functionIndex === undefined
+          ? undefined
+          : source.inlinedSfis[inlined.functionIndex];
+      const info = sfi === undefined ? undefined : sfiIndex.get(sfi);
+      frames.push({
+        ...(info ?? {
+          functionName: "(inlined)",
+          file: entry.file,
+          line: undefined,
+          column: undefined
+        }),
+        at: positionsFor(info?.file ?? entry.file)?.at(scriptOffset)
+      });
+      // The call site is a position in the parent: the enclosing inlined function, or
+      // the code object's own function once the chain runs out.
+      scriptOffset = inlined.scriptOffset;
+      id = inlined.parent ?? -1;
+    }
+    frames.push(own(positionsFor(entry.file)?.at(scriptOffset)));
+    return { entry, frames };
+  };
+
+  /**
+   * Where an IC or map event happened. V8 logs the caller's code address for inlined
+   * code and resolves the line/column against the caller's script, so for an inlined
+   * pc the innermost frame's own position replaces the logged one.
+   */
+  const eventSite = (
+    pc: bigint,
+    line: string | undefined,
+    column: string | undefined
+  ): {
+    file: string | undefined;
+    functionName: string | undefined;
+    line: number;
+    column: number;
+  } => {
+    const resolved = resolvePc(pc, "return");
+    const frame = resolved?.frames.at(0);
+    if (resolved && resolved.frames.length > 1 && frame?.at) {
+      return {
+        file: frame.file,
+        functionName: frame.functionName,
+        line: frame.at.line,
+        column: frame.at.column
+      };
+    }
+    return {
+      file: resolved?.entry.file,
+      functionName: resolved?.entry.functionName,
+      line: Number(line),
+      column: Number(column)
+    };
+  };
 
   /**
    * Name of the function whose start is the closest one at or before a position in
@@ -167,11 +297,11 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   };
 
   /** Source identity of a function; tick rows and retained samples share this key. */
-  const functionKey = (entry: CodeEntry): string =>
+  const functionKey = (entry: FunctionIdentity): string =>
     `${entry.functionName}|${entry.file}|${entry.line}|${entry.column}`;
 
   /** Merge all optimization tiers of a function into one row keyed by source identity. */
-  const tickRowFor = (entry: CodeEntry): FunctionTicks => {
+  const tickRowFor = (entry: FunctionIdentity): FunctionTicks => {
     const key = functionKey(entry);
     let row = functionTicks.get(key);
     if (!row) {
@@ -227,16 +357,16 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       const parsedNew = parseIcState(newState ?? "");
       if (!parsedOld || !parsedNew)
         throw new Error(`unrecognized IC state: ${oldState}->${newState}`);
-      const code = codeMap.find(BigInt(pc ?? "0"));
-      const siteKey = `${type}|${code?.file ?? "?"}|${line}|${column}|${key}`;
+      const at = eventSite(BigInt(pc ?? "0"), line, column);
+      const siteKey = `${type}|${at.file ?? "?"}|${at.line}|${at.column}|${key}`;
       let site = icSites.get(siteKey);
       if (!site) {
         site = {
           type,
-          file: code?.file,
-          functionName: code?.functionName,
-          line: Number(line),
-          column: Number(column),
+          file: at.file,
+          functionName: at.functionName,
+          line: at.line,
+          column: at.column,
           key: key ?? "",
           worstState: parsedNew,
           transitions: []
@@ -262,7 +392,16 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     "v8-version": (args): void => {
       v8Version = args.filter((field) => field !== "").join(".");
     },
-    "code-creation": ([kind, kindNum, time, start, size, name]): void => {
+    "code-creation": ([
+      kind,
+      kindNum,
+      time,
+      start,
+      size,
+      name,
+      sfi,
+      tierMarker
+    ]): void => {
       const marker = MARKER_NAME_RE.exec(name ?? "");
       if (marker?.groups) {
         // Harness markers are 2-byte eval'd no-ops; keep them out of the code map
@@ -273,15 +412,26 @@ export const parseLog = async (path: string): Promise<LogModel> => {
         });
         return;
       }
-      const entry = {
+      const entry: CodeEntry = {
         start: BigInt(start ?? "0"),
         size: Number(size),
         kind: kind ?? "unknown",
         ...splitEntryName(name ?? "")
       };
       codeMap.add(entry);
-      if (kind !== "JS" || entry.file === undefined || entry.line === undefined)
-        return;
+      if (kind !== "JS") return;
+      entry.sfi = sfi;
+      entry.marker = tierMarker;
+      // First tier wins; every tier of a function names the same function.
+      if (sfi !== undefined && !sfiIndex.has(sfi)) {
+        sfiIndex.set(sfi, {
+          functionName: entry.functionName,
+          file: entry.file,
+          line: entry.line,
+          column: entry.column
+        });
+      }
+      if (entry.file === undefined || entry.line === undefined) return;
       const key = `${entry.functionName}|${entry.file}|${entry.line}|${entry.column}`;
       let info = functionIndex.get(key);
       if (!info) {
@@ -300,14 +450,40 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       if (!info.tiers.includes(tier)) info.tiers.push(tier);
     },
     "script-source": ([, url, source]): void => {
-      if (url !== undefined && source !== undefined)
-        scripts.set(normalizeScriptUrl(url), source);
+      if (url === undefined || source === undefined) return;
+      const normalized = normalizeScriptUrl(url);
+      scripts.set(normalized, source);
+      scriptPositions.delete(normalized);
+    },
+    "sfi-move": ([from, to]): void => {
+      // Keep the old key: tables logged before the move still reference it.
+      const info = from === undefined ? undefined : sfiIndex.get(from);
+      if (info && to) sfiIndex.set(to, info);
+    },
+    "code-source-info": ([
+      address,
+      scriptId,
+      _startPos,
+      _endPos,
+      positions,
+      inlining,
+      inlinedSfis
+    ]): void => {
+      const entry = codeMap.at(BigInt(address ?? "0"));
+      if (!entry) return;
+      entry.source = decodeSourceInfo(
+        scriptId ?? "",
+        positions ?? "",
+        inlining ?? "",
+        inlinedSfis ?? ""
+      );
+      codeSourceInfoCount += 1;
     },
     "code-deopt": ([
       time,
       _size,
       address,
-      _inliningId,
+      inliningId,
       _scriptOffset,
       kind,
       location,
@@ -319,12 +495,22 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       const parsedKind = parseDeoptKind(kind ?? "");
       const siteKey = `${parsedKind}|${position.file}|${position.line}|${position.column}`;
       const timestamp = Number(time);
-      // The logged address is the deopting code object, which for inlined code is
-      // the caller, not the function containing the position.
+      // The logged address is the deopting code object; a non-negative inlining id
+      // names the inlined function, through the object's tables, that holds the position.
+      const entry = codeMap.find(BigInt(address ?? "0"));
+      const id = Number(inliningId);
+      const inlined =
+        entry?.source && id >= 0 ? entry.source.inlining[id] : undefined;
+      const sfi =
+        inlined?.functionIndex === undefined
+          ? undefined
+          : entry?.source?.inlinedSfis[inlined.functionIndex];
       const functionName =
-        (inlinedAt.length === 0
-          ? codeMap.find(BigInt(address ?? "0"))?.functionName
-          : undefined) ??
+        (id < 0
+          ? entry?.functionName
+          : sfi === undefined
+            ? undefined
+            : sfiIndex.get(sfi)?.functionName) ??
         enclosingFunctionName(position.file, position.line, position.column);
       let site = deoptSites.get(siteKey);
       if (!site) {
@@ -369,15 +555,15 @@ export const parseLog = async (path: string): Promise<LogModel> => {
 
       const address = BigInt(pc ?? "0");
       if (address === 0n) return;
-      const code = codeMap.find(address);
-      const siteKey = `${code?.file ?? "?"}|${line}|${column}`;
+      const at = eventSite(address, line, column);
+      const siteKey = `${at.file ?? "?"}|${at.line}|${at.column}`;
       let site = transitionSites.get(siteKey);
       if (!site) {
         site = {
-          file: code?.file,
-          functionName: code?.functionName,
-          line: Number(line),
-          column: Number(column),
+          file: at.file,
+          functionName: at.functionName,
+          line: at.line,
+          column: at.column,
           propertyNames: [],
           count: 0,
           events: []
@@ -408,25 +594,31 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       vmStates[state] = (vmStates[state] ?? 0) + 1;
 
       let previous = BigInt(pc ?? "0");
-      const top = codeMap.find(previous);
-      if (top) tickRowFor(top).selfTicks += 1;
+      // Inlined code runs under the caller's code address; the innermost frame is the
+      // function actually executing, so it gets the self tick.
+      const top = resolvePc(previous, "sampled")?.frames ?? [];
+      const self = top.at(0);
+      if (self) tickRowFor(self).selfTicks += 1;
 
       // Total ticks count each function once per sample, however often it recurs.
       // Keyed by function key; insertion order keeps the stack innermost first.
       const onStack = new Map<string, FunctionTicks>();
-      if (top) onStack.set(functionKey(top), tickRowFor(top));
+      const pushFrames = (frames: Frame[]): void => {
+        for (const frame of frames)
+          onStack.set(functionKey(frame), tickRowFor(frame));
+      };
+      pushFrames(top);
       for (const field of stack) {
         const address = parseStackAddress(field ?? "", previous);
         if (address === undefined) continue;
         previous = address;
-        const entry = codeMap.find(address);
-        if (entry) onStack.set(functionKey(entry), tickRowFor(entry));
+        pushFrames(resolvePc(address, "return")?.frames ?? []);
       }
       for (const row of onStack.values()) row.totalTicks += 1;
       samples.push({
         time: Number(time),
         vmState: state,
-        self: top ? functionKey(top) : undefined,
+        self: self ? functionKey(self) : undefined,
         onStack: [...onStack.keys()]
       });
     },
@@ -467,6 +659,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     functionIndex: [...functionIndex.values()],
     markers,
     codeEntryCount: codeMap.count,
+    codeSourceInfoCount,
     warnings: {
       unknownCommands: Object.fromEntries(warnings.unknownCommands),
       badLines: warnings.badLines

@@ -150,8 +150,13 @@ export const computeFindings = (model: LogModel): Finding[] => {
       heatByFile.set(row.file, (heatByFile.get(row.file) ?? 0) + share);
     }
   }
-  // Inlining attributes ticks to the caller, so a site's own function often shows no
-  // heat even when it dominates the profile; the file-level share is the fallback.
+  // Inlining tables attribute a function's own ticks correctly, but the cost of a
+  // megamorphic site is spent inside V8 builtins such as LoadIC_Megamorphic, and the
+  // sampler cannot walk from those frames back to the JS caller: on the megamorphic
+  // fixture 44 of 64 ticks sit in LoadIC_Megamorphic with no JS frame on the sampled
+  // stack while getX itself holds 3. A function's self ticks therefore understate its
+  // IC cost, so the file-level share stays as the heat proxy until builtin time can be
+  // charged to the sites that incur it.
   const heatOf = (functionName: string | undefined, file: string): number =>
     Math.max(
       heatByFunction.get(`${functionName}|${file}`) ?? 0,

@@ -129,6 +129,16 @@ describe("parseLog on a real generated V8 log", () => {
     expect(hot?.totalTicks).toBeGreaterThanOrEqual(hot?.selfTicks ?? 0);
   });
 
+  // The real flag set must keep producing the tables, or every attribution silently
+  // degrades to the caller: inlined ICs, ticks, and map transitions land on the function
+  // V8 inlined them into. Node 26 writes 49 tables for this workload.
+  it("decodes the code-source-info tables the real flag set produces", () => {
+    expect(model.codeSourceInfoCount).toBeGreaterThan(40);
+    expect(Object.keys(model.warnings.unknownCommands)).not.toContain(
+      "code-source-info"
+    );
+  });
+
   // Events we deliberately do not handle yet must surface in warnings rather than
   // vanish — agents need to know when a log contains data the parser skipped.
   it("counts unhandled commands instead of dropping them silently", () => {
@@ -297,5 +307,107 @@ describe("parseLog on the deopt-loop workload", () => {
     expect(
       model.deopts.some((entry) => entry.file.includes("inlined at"))
     ).toBe(false);
+  });
+});
+
+describe("parseLog resolves inlined positions through code-source-info", () => {
+  const LIB = "file:///app/lib.js";
+  const MAIN = "file:///app/main.js";
+  let fixtureDir: string;
+  let model: LogModel;
+
+  // getX (lib.js) is inlined into hot (main.js). V8 logs every event from the inlined
+  // copy with hot's code address, and resolves the logged line/column against
+  // main.js; only hot's code-source-info tables say the pc is really inside getX.
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-inlining-"));
+    const path = join(fixtureDir, "inlining.v8.log");
+    await writeFile(
+      path,
+      [
+        "v8-version,14,0,0,0,-node.0,0",
+        // Each `\\n` writes a backslash and an n, which the CSV reader decodes as a newline.
+        `script-source,7,${LIB},export const getX = (o) => o.x;\\n`,
+        `script-source,8,${MAIN},// caller\\nimport { getX } from "./lib.js";\\nfunction hot(o) { return getX(o); }\\n`,
+        `code-creation,JS,10,1000,0x1000,64,getX ${LIB}:1:21,0x7001,~`,
+        "code-source-info,0x1000,7,20,31,C0O21C8O27C16O29,,",
+        `code-creation,JS,13,2000,0x2000,256,hot ${MAIN}:3:13,0x7002,*`,
+        "code-source-info,0x2000,8,43,78,C0O59C16O72C32O29I0C48O75,F0O72,S0x7001",
+        "LoadIC,0x1012,2500,1,30,0,1,0x9000,x,,",
+        "LoadIC,0x2028,3000,2,20,P,N,0x9001,x,,",
+        "LoadIC,0x2030,3050,2,20,P,N,0x9002,x,,",
+        "tick,0x2028,3100,0,0x0,0,0x2010",
+        "tick,0x2030,3150,0,0x0,0,0x2030",
+        "map,Transition,3300,0x8001,0x8002,0x2028,2,20,,x",
+        `code-deopt,3200,256,0x2000,0,29,deopt-eager,<${LIB}:1:30> inlined at <${MAIN}:3:30>,wrong map`,
+        ""
+      ].join("\n")
+    );
+    model = await parseLog(path);
+  });
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("decodes every table that follows a known code object", () => {
+    expect(model.warnings.unknownCommands["code-source-info"]).toBeUndefined();
+    expect(model.codeSourceInfoCount).toBe(2);
+  });
+
+  // Without the tables the second event becomes a second site in main.js at 2:20 — the
+  // ghost finding the e2e suite guards against.
+  it("merges the inlined IC event into the callee's own site", () => {
+    const sites = model.ics.filter((site) => site.key === "x");
+    expect(sites).toHaveLength(1);
+    const [site] = sites;
+    expect(site?.file).toBe(LIB);
+    expect(site?.line).toBe(1);
+    expect(site?.column).toBe(30);
+    expect(site?.functionName).toBe("getX");
+    // The third event's pc (offset 48 in hot's TurboFan code) is the return address
+    // after the call into the IC runtime, and V8's Code::SourcePosition subtracts one
+    // before the lookup, so the entry at the exact offset names the call site while the
+    // real position is one byte back, inside inlined getX.
+    expect(site?.transitions).toHaveLength(3);
+    expect(site?.worstState).toBe("megamorphic");
+  });
+
+  // Charging inlined ticks to the caller left getX with zero self time, so its
+  // findings ranked by its file's heat instead of its own.
+  it("gives the self tick to the inlined function and keeps the caller on the stack", () => {
+    expect(model.profile.samples[0]?.self).toBe(`getX|${LIB}|1|21`);
+    expect(model.profile.samples[0]?.onStack).toEqual([
+      `getX|${LIB}|1|21`,
+      `hot|${MAIN}|3|13`
+    ]);
+    // A sampled pc is exact: offset 48 is hot's own call site, not inlined code.
+    expect(model.profile.samples[1]?.self).toBe(`hot|${MAIN}|3|13`);
+    // A stack frame is a return address: one byte back, offset 47 is inlined getX.
+    expect(model.profile.samples[1]?.onStack).toEqual(
+      expect.arrayContaining([`hot|${MAIN}|3|13`, `getX|${LIB}|1|21`])
+    );
+    const row = (name: string): unknown =>
+      model.profile.functions.find((fn) => fn.functionName === name);
+    expect(row("getX")).toMatchObject({ selfTicks: 1, totalTicks: 2 });
+    expect(row("hot")).toMatchObject({ selfTicks: 1, totalTicks: 2 });
+  });
+
+  // Map transitions are logged with the same caller-relative pc and position as ICs,
+  // so an inlined constructor's churn would otherwise land at a bogus caller position.
+  it("attributes a map transition from inlined code to the callee's position", () => {
+    expect(model.maps.transitionSites[0]).toMatchObject({
+      file: LIB,
+      functionName: "getX",
+      line: 1,
+      column: 30
+    });
+  });
+
+  // The deopting code object is hot's; its inlining id must name getX through the
+  // table rather than fall back to the code object's own name.
+  it("names an inlined deopt's function through the inlining table", () => {
+    expect(model.deopts[0]?.functionName).toBe("getX");
+    expect(model.deopts[0]?.inlinedCount).toBe(1);
   });
 });

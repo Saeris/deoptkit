@@ -17,6 +17,7 @@ const emptyModel = (): LogModel => ({
   functionIndex: [],
   markers: [],
   codeEntryCount: 0,
+  codeSourceInfoCount: 0,
   warnings: { unknownCommands: {}, badLines: 0 }
 });
 

@@ -106,6 +106,18 @@ describe("deoptKit vitest preset, end to end", () => {
     expect(original?.file.endsWith("lib.ts")).toBe(true);
     // getX is declared on line 2 of lib.ts.
     expect(original?.line).toBe(2);
+    // V8 inlines getX into the bench function; before the inlining tables were decoded
+    // the inlined copy was a second, higher-ranked finding in the bench file.
+    expect(
+      models
+        .flatMap(computeFindings)
+        .filter(
+          (found) =>
+            found.kind === "megamorphic-ic" &&
+            found.evidence["key"] === "x" &&
+            !found.file.endsWith("lib.ts")
+        )
+    ).toEqual([]);
   });
 
   // The README promises that `vitest bench --watch` alone keeps the editor squiggles
@@ -166,9 +178,6 @@ describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
 
   // Without the module runner V8 sees the shipped file, so the finding must land on the
   // true position with no source-map resolution; that is the whole reason to opt in.
-  // Deliberately not asserted: the absence of a second `x` finding on the bench file.
-  // V8 inlines getX into the caller and the inlined copy of the IC is attributed to the
-  // caller's file until inlining-aware attribution lands.
   it("reports the megamorphic site at its exact position without source maps", () => {
     if (run.status !== 0) {
       throw new Error(
@@ -185,6 +194,16 @@ describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
     expect(site?.file).not.toContain("?");
     expect(site?.line).toBe(2);
     expect(site?.functionName).toBe("getX");
+    // V8 inlines getX into the bench function; before the inlining tables were decoded
+    // the inlined copy was a second, higher-ranked finding in the bench file.
+    expect(
+      findings.filter(
+        (finding) =>
+          finding.kind === "megamorphic-ic" &&
+          finding.evidence["key"] === "x" &&
+          !finding.file.endsWith("lib.ts")
+      )
+    ).toEqual([]);
   });
 
   // Native imports make Vitest append ?vitest=<timestamp> to script URLs; if that leaks

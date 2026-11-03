@@ -58,6 +58,14 @@ export class CodeMap {
     return address < entry.start + BigInt(entry.size) ? entry : undefined;
   }
 
+  /** The entry that starts exactly at `start`, if any. */
+  at(start: bigint): CodeEntry | undefined {
+    const index = this.#indexBefore(start);
+    if (index < 0) return undefined;
+    const entry = this.#entries[index];
+    return entry.start === start ? entry : undefined;
+  }
+
   /** GC moved a code object: re-index the entry starting exactly at `from`. */
   move(from: bigint, to: bigint): void {
     const index = this.#indexBefore(from);

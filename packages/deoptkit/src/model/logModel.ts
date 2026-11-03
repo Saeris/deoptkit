@@ -1,3 +1,5 @@
+import type { SourceInfo } from "../parser/sourceInfo";
+
 /** IC states in escalation order. V8 logs these as single characters (see `parseIcState`). */
 export const IC_STATES = [
   "no_feedback",
@@ -98,6 +100,15 @@ export interface CodeEntry {
   file: string | undefined;
   line: number | undefined;
   column: number | undefined;
+  /** SharedFunctionInfo address from a JS `code-creation`; identical across a function's tiers. */
+  sfi?: string | undefined;
+  /**
+   * V8's tier marker from code-creation: `~` interpreted, `^` baseline, `+` Maglev, `*`
+   * TurboFan, with an `o` prefix for OSR code and a trailing `'` for context-specialized code.
+   */
+  marker?: string | undefined;
+  /** Decoded `code-source-info` tables, when the log has them for this code object. */
+  source?: SourceInfo | undefined;
 }
 
 /** One V8 object map (hidden class) observed in the log. */
@@ -215,5 +226,7 @@ export interface LogModel {
   /** Harness markers in log order, for fromMark/toMark window filtering. */
   markers: Marker[];
   codeEntryCount: number;
+  /** code-source-info lines decoded; 0 means the log lacks --log-source-code tables and attribution falls back to the caller. */
+  codeSourceInfoCount: number;
   warnings: ParserWarnings;
 }

@@ -43,6 +43,7 @@ describe("computeFindings scoring calibration", () => {
       functionIndex: [],
       markers: [],
       codeEntryCount: 0,
+      codeSourceInfoCount: 0,
       warnings: { unknownCommands: {}, badLines: 0 }
     };
     const findings = computeFindings(model);
