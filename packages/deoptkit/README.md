@@ -60,7 +60,7 @@ The server advertises `instructions` describing the workflow, so a connected age
 3. Fix the top finding — at its `original` position when present (that's the source you wrote), otherwise its file/line (paths are relative to the project, ready for your editor or file tools).
 4. `profile_run` again, then `compare_sessions { baseSessionId, headSessionId }` — reports the findings your change resolved, any regressions it introduced, and per-function CPU deltas.
 
-Drill-down tools when a finding needs more context: `get_function` (annotated source + its ICs/deopts/ticks), `get_map` (a hidden class's transition chain and which call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, `load_log` (analyze an existing `v8.log`), `load_manifest` (load every log from a vitest bench run), `list_sessions`.
+Drill-down tools when a finding needs more context: `get_function` (annotated source + its ICs/deopts/ticks), `get_map` (a hidden class's transition chain and which call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, `get_profile` (the call tree: who calls the hot function, top-down or bottom-up), `load_log` (analyze an existing `v8.log`), `load_manifest` (load every log from a vitest bench run), `list_sessions`.
 
 > **Warm-up matters.** V8 only optimizes hot code, so profile a workload that runs the target thousands of times — the `observed()` helper below encodes this. For libraries, profile the **built** output, not source: bundling changes shapes and inlining. The server flags cold runs: `profile_run` and `load_log` return `quality.warnings` when no user function reached an optimizing tier or no profiler ticks were recorded.
 
