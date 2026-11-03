@@ -78,6 +78,7 @@ Conventions: additive model changes only (the `LogModel` is a public type export
 - `src/tools/shared.ts`, `src/tools/getFindings.ts`, `src/tools/listIcs.ts`, `src/tools/listDeopts.ts`, `src/tools/listFunctions.ts`
 - `src/harness/__tests__/harness.spec.ts`, `src/__tests__/server.spec.ts` (extend)
 - `src/__tests__/sessions.spec.ts`, `src/analysis/__tests__/findings.spec.ts` (add `samples: []` to their hand-built `profile` literals; amendment of 2026-11-03 after the executor found that the required field broke them)
+- `src/analysis/__tests__/window.spec.ts` (create; second amendment of 2026-11-03: the harness workload records zero ticks on fast machines, so a window test on the tick-bearing `megamorphic` workload is required to exercise the function-key round trip)
 - `.bumpy/007-windowed-ticks.md` (create)
 
 **Out of scope**:
