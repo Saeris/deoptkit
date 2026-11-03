@@ -104,5 +104,5 @@ profiles/
 .vitest/
 
 # deoptkit ci output: baselines are committed, the per-run interchange is not
-.deopt/*
-!.deopt/baselines/
+**/.deopt/*
+!**/.deopt/baselines/
