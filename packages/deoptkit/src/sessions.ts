@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import type { LogModel } from "./model/logModel";
 
 /** One parsed v8.log held in memory. */
@@ -7,6 +8,8 @@ export interface Session {
   source: string;
   loadedAt: string;
   model: LogModel;
+  /** Absolute directory that reported paths are relative to. */
+  workspaceRoot: string;
 }
 
 /** What `list_sessions` reports for each session. */
@@ -31,12 +34,17 @@ export class SessionStore {
   #sessions = new Map<string, Session>();
   #nextId = 1;
 
-  add(source: string, model: LogModel): Session {
+  add(
+    source: string,
+    model: LogModel,
+    workspaceRoot: string = process.cwd()
+  ): Session {
     const session: Session = {
       id: `s${this.#nextId++}`,
       source,
       loadedAt: new Date().toISOString(),
-      model
+      model,
+      workspaceRoot: resolve(workspaceRoot)
     };
     this.#sessions.set(session.id, session);
     // Map preserves insertion order, so the first key is always the oldest session.

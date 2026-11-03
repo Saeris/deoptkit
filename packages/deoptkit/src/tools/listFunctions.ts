@@ -7,6 +7,7 @@ import {
   matchesFile,
   offsetSchema,
   paginate,
+  presentFile,
   sessionIdSchema,
   toMarkSchema,
   unknownSessionError,
@@ -46,10 +47,12 @@ export const listFunctions = defineTool({
     const rows = model.profile.functions
       .filter((row) => matchesFile(row.file, file))
       .toSorted((a, b) => b[key] - a[key]);
+    const page = paginate(rows, limit, offset);
     return jsonResult({
       tickCount: model.profile.tickCount,
       vmStates: model.profile.vmStates,
-      ...paginate(rows, limit, offset)
+      ...page,
+      items: page.items.map((row) => presentFile(session, row))
     });
   }
 });

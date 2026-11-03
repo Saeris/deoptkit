@@ -93,10 +93,12 @@ export const profileRun = defineTool({
       const model = await parseLog(run.logfile);
       const session = ctx.sessions.add(
         `profile_run: ${command.join(" ")}`,
-        model
+        model,
+        cwd ?? process.cwd()
       );
       return jsonResult({
         sessionId: session.id,
+        workspaceRoot: session.workspaceRoot,
         v8Version: model.v8Version,
         exit,
         counts: {

@@ -1,5 +1,4 @@
 import * as v from "valibot";
-import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   fileFilterSchema,
@@ -8,6 +7,7 @@ import {
   matchesFile,
   offsetSchema,
   paginate,
+  presentLocation,
   sessionIdSchema,
   toMarkSchema,
   unknownSessionError,
@@ -51,7 +51,6 @@ export const listDeopts = defineTool({
     if (!session) return unknownSessionError(sessionId);
     const model = windowedModel(session, { fromMark, toMark });
     if ("error" in model) return jsonResult(model, { isError: true });
-    const resolver = resolverFor(session);
     const sites = model.deopts
       .filter(
         (site) =>
@@ -60,7 +59,7 @@ export const listDeopts = defineTool({
           matchesFile(site.file, file)
       )
       // Per-event arrays exist for windowing, not for tool payloads.
-      .map(({ events: _events, ...site }) => withOriginal(resolver, site));
+      .map(({ events: _events, ...site }) => presentLocation(session, site));
     return jsonResult(paginate(sites, limit, offset));
   }
 });

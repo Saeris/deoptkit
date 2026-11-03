@@ -15,6 +15,7 @@ export type LoadOutcome =
   | {
       sessionId: string;
       source: string;
+      workspaceRoot: string;
       v8Version: string;
       counts: {
         icSites: number;
@@ -31,7 +32,8 @@ export type LoadOutcome =
 /** Sniff, parse, and register one v8.log as a session; shared by load_log and load_manifest. */
 export const loadLogFile = async (
   path: string,
-  ctx: ToolContext
+  ctx: ToolContext,
+  workspaceRoot?: string
 ): Promise<LoadOutcome> => {
   let head: string;
   try {
@@ -56,10 +58,11 @@ export const loadLogFile = async (
     };
   }
   const model = await parseLog(path);
-  const session = ctx.sessions.add(path, model);
+  const session = ctx.sessions.add(path, model, workspaceRoot);
   return {
     sessionId: session.id,
     source: path,
+    workspaceRoot: session.workspaceRoot,
     v8Version: model.v8Version,
     counts: {
       icSites: model.ics.length,
@@ -85,10 +88,18 @@ export const loadLog = defineTool({
     path: v.pipe(
       v.string(),
       v.description("Absolute path to the v8.log file to load")
+    ),
+    workspaceRoot: v.optional(
+      v.pipe(
+        v.string(),
+        v.description(
+          "Directory that reported paths are relative to (default: the server's working directory)"
+        )
+      )
     )
   }),
-  handler: async ({ path }, ctx) => {
-    const outcome = await loadLogFile(path, ctx);
+  handler: async ({ path, workspaceRoot }, ctx) => {
+    const outcome = await loadLogFile(path, ctx, workspaceRoot);
     return "error" in outcome
       ? jsonResult(outcome, { isError: true })
       : jsonResult(outcome);

@@ -1,6 +1,5 @@
 import * as v from "valibot";
 import { IC_STATES } from "../model/logModel";
-import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   fileFilterSchema,
@@ -9,6 +8,7 @@ import {
   matchesFile,
   offsetSchema,
   paginate,
+  presentLocation,
   sessionIdSchema,
   toMarkSchema,
   unknownSessionError,
@@ -83,12 +83,11 @@ export const listIcs = defineTool({
         (typeSet === undefined || typeSet.has(site.type)) &&
         matchesFile(site.file, file)
     );
-    const resolver = resolverFor(session);
     const page = paginate(sites, limit, offset);
     return jsonResult({
       ...page,
       items: page.items.map((site) =>
-        withOriginal(resolver, {
+        presentLocation(session, {
           type: site.type,
           file: site.file,
           functionName: site.functionName,

@@ -1,9 +1,12 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as v from "valibot";
+import { toWorkspacePath } from "../analysis/paths";
 import type { MarkWindow } from "../analysis/window";
 import { applyWindow, resolveWindow } from "../analysis/window";
 import type { LogModel } from "../model/logModel";
 import type { Session } from "../sessions";
+import type { OriginalPosition } from "../sourcemaps/resolver";
+import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { jsonResult } from "./defineTool";
 
 export const sessionIdSchema = v.pipe(
@@ -93,3 +96,41 @@ export const matchesFile = (
   file: string | undefined,
   filter: string | undefined
 ): boolean => filter === undefined || (file?.includes(filter) ?? false);
+
+/**
+ * How every tool reports a location: the source-mapped `original` attached when a map
+ * resolves it, and both `file`s rewritten as workspace-relative paths (see
+ * `toWorkspacePath`). The model itself keeps V8's URLs.
+ */
+export const presentLocation = <
+  T extends { file?: string | undefined; line: number; column: number }
+>(
+  session: Session,
+  item: T
+): T & { original?: OriginalPosition } => {
+  const located = withOriginal(resolverFor(session), item);
+  const root = session.workspaceRoot;
+  return {
+    ...located,
+    ...(located.file === undefined
+      ? {}
+      : { file: toWorkspacePath(located.file, root) }),
+    ...(located.original === undefined
+      ? {}
+      : {
+          original: {
+            ...located.original,
+            file: toWorkspacePath(located.original.file, root)
+          }
+        })
+  };
+};
+
+/** `presentLocation` for rows whose position is optional (profile rows). */
+export const presentFile = <T extends { file?: string | undefined }>(
+  session: Session,
+  item: T
+): T =>
+  item.file === undefined
+    ? item
+    : { ...item, file: toWorkspacePath(item.file, session.workspaceRoot) };

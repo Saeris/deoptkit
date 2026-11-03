@@ -57,7 +57,7 @@ The server advertises `instructions` describing the workflow, so a connected age
 
 1. `profile_run { command: ["node", "bench.js"] }` — runs the workload under V8 logging flags (no flag knowledge needed) and loads the result as a session.
 2. `get_findings { sessionId }` — everything wrong, ranked worst-first with severity 1–100, source locations, V8-level explanations, and suggested-fix categories.
-3. Fix the top finding — at its `original` position when present (that's the source you wrote), otherwise its file/line.
+3. Fix the top finding — at its `original` position when present (that's the source you wrote), otherwise its file/line (paths are relative to the project, ready for your editor or file tools).
 4. `profile_run` again, then `compare_sessions { baseSessionId, headSessionId }` — reports the findings your change resolved, any regressions it introduced, and per-function CPU deltas.
 
 Drill-down tools when a finding needs more context: `get_function` (annotated source + its ICs/deopts/ticks), `get_map` (a hidden class's transition chain and which call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, `load_log` (analyze an existing `v8.log`), `load_manifest` (load every log from a vitest bench run), `list_sessions`.
@@ -138,6 +138,8 @@ deoptkit ci --update bench/parse.bench.mjs    # accept current findings as the b
 ```
 
 Baselines contain identity-only structural findings (no line numbers, severities, or timing), so they survive unrelated edits and noisy CI runners — this is the payoff of deoptkit's structural-vs-timing split. On GitHub Actions, new findings also emit `::warning` annotations at their source-mapped positions. Commit `.deopt/baselines/` to make "no new megamorphic sites" a guarded invariant.
+
+Identities use paths relative to the directory `deoptkit ci` runs in, so run it from the same project directory locally and in CI and the committed baseline matches everywhere.
 
 ## What the signals mean
 

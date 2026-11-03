@@ -1,6 +1,6 @@
 import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { gitHubAnnotation, parseCiArgs, runCi } from "../ci";
 
@@ -17,14 +17,20 @@ describe("deoptkit ci", () => {
   let dir: string;
   let app: string;
   let outDir: string;
+  let previousCwd: string;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "deoptkit-ci-"));
     app = join(dir, "app.js");
     outDir = join(dir, ".deopt");
+    // Baseline paths are relative to the working directory, so run from the workspace
+    // the script lives in. (The forks pool keeps this chdir inside this spec's process.)
+    previousCwd = process.cwd();
+    process.chdir(dir);
   });
 
   afterAll(async () => {
+    process.chdir(previousCwd);
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -62,6 +68,20 @@ describe("deoptkit ci", () => {
       0
     );
     await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // A baseline is committed and must match on any machine; an absolute path in the
+    // identity makes every CI run fail with "NEW" findings. (The fixed variant's first
+    // baseline is empty, so the accepted regression is where entries exist to check.)
+    const accepted = JSON.parse(
+      await readFile(join(outDir, "baselines", baselines[0] ?? ""), "utf8")
+    ) as { findings: { identity: string; file: string }[] };
+    expect(accepted.findings.length).toBeGreaterThan(0);
+    for (const entry of accepted.findings) {
+      expect(entry.file.startsWith("file:")).toBe(false);
+      expect(isAbsolute(entry.file)).toBe(false);
+      expect(entry.identity).toContain(entry.file);
+      expect(entry.file).toBe("app.js");
+    }
 
     // Fixing it again is not a failure — resolved findings only prompt an update notice.
     await copyFile(join(WORKLOAD_DIR, "map-churn-fixed.js"), app);

@@ -1,6 +1,5 @@
 import * as v from "valibot";
 import { computeFindings } from "../analysis/findings";
-import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   fileFilterSchema,
@@ -9,6 +8,7 @@ import {
   matchesFile,
   offsetSchema,
   paginate,
+  presentLocation,
   sessionIdSchema,
   toMarkSchema,
   unknownSessionError,
@@ -63,7 +63,6 @@ export const getFindings = defineTool({
     if (!session) return unknownSessionError(sessionId);
     const model = windowedModel(session, { fromMark, toMark });
     if ("error" in model) return jsonResult(model, { isError: true });
-    const resolver = resolverFor(session);
     const findings = computeFindings(model)
       .filter(
         (candidate) =>
@@ -71,7 +70,7 @@ export const getFindings = defineTool({
           (severityMin === undefined || candidate.severity >= severityMin) &&
           matchesFile(candidate.file, file)
       )
-      .map((candidate) => withOriginal(resolver, candidate));
+      .map((candidate) => presentLocation(session, candidate));
     return jsonResult(paginate(findings, limit, offset));
   }
 });

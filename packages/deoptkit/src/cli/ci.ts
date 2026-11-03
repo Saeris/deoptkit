@@ -5,6 +5,7 @@ import * as v from "valibot";
 import { findingIdentity } from "../analysis/compare";
 import type { Finding } from "../analysis/findings";
 import { computeFindings } from "../analysis/findings";
+import { toWorkspacePath } from "../analysis/paths";
 import { runWorkload } from "../collect/runner";
 import type { LogModel } from "../model/logModel";
 import { parseLog } from "../parser/parseLog";
@@ -68,16 +69,28 @@ const GATED_KINDS = new Set<string>([
   "deopt-loop"
 ]);
 
+/**
+ * Baselines are committed and compared on other machines, so identities must not
+ * contain the checkout path: the file is rewritten relative to the working directory.
+ */
+const portable = (found: Finding): Finding => ({
+  ...found,
+  file: toWorkspacePath(found.file, process.cwd())
+});
+
 const toEntries = (findings: Finding[]): BaselineEntry[] =>
   findings
     .filter(({ kind }) => GATED_KINDS.has(kind))
-    .map((found) => ({
-      identity: findingIdentity(found),
-      kind: found.kind,
-      file: found.file,
-      functionName: found.functionName,
-      summary: found.summary
-    }));
+    .map((found) => {
+      const entry = portable(found);
+      return {
+        identity: findingIdentity(entry),
+        kind: entry.kind,
+        file: entry.file,
+        functionName: entry.functionName,
+        summary: entry.summary
+      };
+    });
 
 const baselinePathFor = (outDir: string, script: string): string => {
   const slug = relative(process.cwd(), resolve(script)).replace(
@@ -192,7 +205,8 @@ export const runCi = async (args: string[]): Promise<number> => {
     const current = new Set(entries.map(({ identity }) => identity));
     const introduced = findings.filter(
       (found) =>
-        GATED_KINDS.has(found.kind) && !known.has(findingIdentity(found))
+        GATED_KINDS.has(found.kind) &&
+        !known.has(findingIdentity(portable(found)))
     );
     const resolved = baseline.findings.filter(
       ({ identity }) => !current.has(identity)

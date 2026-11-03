@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import { toWorkspacePath } from "../analysis/paths";
 import { resolverFor } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import { limitSchema, sessionIdSchema, unknownSessionError } from "./shared";
@@ -59,7 +60,8 @@ export const getFunction = defineTool({
     if (url === undefined) {
       const known = [...model.scripts.keys()]
         .filter((candidate) => candidate.startsWith("file:"))
-        .slice(0, 20);
+        .slice(0, 20)
+        .map((candidate) => toWorkspacePath(candidate, session.workspaceRoot));
       return jsonResult(
         {
           error: `No script matching "${file}" in this session.`,
@@ -155,11 +157,18 @@ export const getFunction = defineTool({
         { selfTicks: 0, totalTicks: 0 }
       );
 
+    const original = resolverFor(session).resolve(url, anchor, fn?.column ?? 1);
     return jsonResult({
-      file: url,
+      file: toWorkspacePath(url, session.workspaceRoot),
       functionName: fn?.functionName ?? functionName,
       anchorLine: anchor,
-      original: resolverFor(session).resolve(url, anchor, fn?.column ?? 1),
+      original:
+        original === undefined
+          ? undefined
+          : {
+              ...original,
+              file: toWorkspacePath(original.file, session.workspaceRoot)
+            },
       optimizationTiers: fn?.tiers,
       codeCreations: fn?.codeCreations,
       ticks,

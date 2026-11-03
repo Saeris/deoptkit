@@ -19,9 +19,17 @@ export const loadManifest = defineTool({
     path: v.pipe(
       v.string(),
       v.description("Path to manifest.json, e.g. .deopt/manifest.json")
+    ),
+    workspaceRoot: v.optional(
+      v.pipe(
+        v.string(),
+        v.description(
+          "Directory that reported paths are relative to (default: the server's working directory)"
+        )
+      )
     )
   }),
-  handler: async ({ path }, ctx) => {
+  handler: async ({ path, workspaceRoot }, ctx) => {
     let manifest: v.InferOutput<typeof manifestSchema>;
     try {
       const raw: unknown = JSON.parse(await readFile(path, "utf8"));
@@ -55,7 +63,7 @@ export const loadManifest = defineTool({
     const outcomes = await Promise.all(
       manifest.logfiles.map(async (logfile) => ({
         logfile,
-        ...(await loadLogFile(logfile, ctx))
+        ...(await loadLogFile(logfile, ctx, workspaceRoot))
       }))
     );
     const loaded = outcomes.filter((outcome) => !("error" in outcome));

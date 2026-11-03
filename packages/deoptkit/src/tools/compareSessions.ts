@@ -1,7 +1,12 @@
 import * as v from "valibot";
 import { compareSessions } from "../analysis/compare";
+import { toWorkspacePath } from "../analysis/paths";
 import { defineTool, jsonResult } from "./defineTool";
-import { sessionIdSchema, unknownSessionError } from "./shared";
+import {
+  presentLocation,
+  sessionIdSchema,
+  unknownSessionError
+} from "./shared";
 
 export const compareSessionsTool = defineTool({
   name: "compare_sessions",
@@ -23,6 +28,7 @@ export const compareSessionsTool = defineTool({
     if (!base) return unknownSessionError(baseSessionId);
     const head = ctx.sessions.get(headSessionId);
     if (!head) return unknownSessionError(headSessionId);
+    const comparison = compareSessions(base.model, head.model);
     return jsonResult({
       base: {
         sessionId: base.id,
@@ -34,7 +40,21 @@ export const compareSessionsTool = defineTool({
         source: head.source,
         v8Version: head.model.v8Version
       },
-      ...compareSessions(base.model, head.model)
+      ...comparison,
+      resolved: comparison.resolved.map((found) =>
+        presentLocation(base, found)
+      ),
+      introduced: comparison.introduced.map((found) =>
+        presentLocation(head, found)
+      ),
+      persisting: comparison.persisting.map((row) => ({
+        ...row,
+        file: toWorkspacePath(row.file, head.workspaceRoot)
+      })),
+      functionDeltas: comparison.functionDeltas.map((row) => ({
+        ...row,
+        file: toWorkspacePath(row.file, head.workspaceRoot)
+      }))
     });
   }
 });

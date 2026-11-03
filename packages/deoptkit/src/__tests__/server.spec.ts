@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -160,10 +160,15 @@ describe("deoptkit server", () => {
       );
       const result = await client.callTool({
         name: "profile_run",
-        arguments: { command: ["node", workload], timeoutMs: 60_000 }
+        arguments: {
+          command: ["node", workload],
+          cwd: dirname(workload),
+          timeoutMs: 60_000
+        }
       });
       expect(result.isError ?? false).toBe(false);
       const payload = textPayload(result);
+      expect(String(payload.workspaceRoot)).toMatch(/workloads$/u);
       expect((payload.counts as { icSites: number }).icSites).toBeGreaterThan(
         0
       );
@@ -175,13 +180,16 @@ describe("deoptkit server", () => {
       const { items } = textPayload(findings) as unknown as {
         items: { kind: string; file: string }[];
       };
-      expect(
-        items.some(
-          (found) =>
-            found.kind === "megamorphic-ic" &&
-            found.file.endsWith("map-churn.js")
-        )
-      ).toBe(true);
+      // Agents pass these strings to Read/Edit; a URL or an absolute path breaks that
+      // and wastes a conversion turn.
+      const megamorphic = items.filter(
+        (found) => found.kind === "megamorphic-ic"
+      );
+      expect(megamorphic.length).toBeGreaterThan(0);
+      for (const found of megamorphic) {
+        expect(found.file).toBe("map-churn.js");
+        expect(found.file.startsWith("file:")).toBe(false);
+      }
 
       // Without offset an agent can never see past the first page of findings, and
       // without a file filter it cannot focus on the module it is editing.
@@ -222,9 +230,11 @@ describe("deoptkit server", () => {
       });
       expect(fn.isError ?? false).toBe(false);
       const detail = textPayload(fn) as unknown as {
+        file: string;
         snippet: { text: string };
         annotations: { note: string }[];
       };
+      expect(detail.file).toBe("map-churn.js");
       expect(detail.snippet.text).toContain("return record.id;");
       expect(
         detail.annotations.some((annotation) =>
