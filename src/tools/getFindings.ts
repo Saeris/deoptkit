@@ -1,15 +1,18 @@
 import * as v from "valibot";
 import { computeFindings } from "../analysis/findings";
-import { applyWindow, resolveWindow } from "../analysis/window";
 import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
+  fileFilterSchema,
   fromMarkSchema,
   limitSchema,
+  matchesFile,
+  offsetSchema,
   paginate,
   sessionIdSchema,
   toMarkSchema,
-  unknownSessionError
+  unknownSessionError,
+  windowedModel
 } from "./shared";
 
 const FINDING_KINDS = [
@@ -46,30 +49,29 @@ export const getFindings = defineTool({
         v.description("Only include findings at or above this severity")
       )
     ),
+    file: fileFilterSchema,
     fromMark: fromMarkSchema,
     toMark: toMarkSchema,
-    limit: limitSchema
+    limit: limitSchema,
+    offset: offsetSchema
   }),
   handler: (
-    { sessionId, kinds, severityMin, fromMark, toMark, limit },
+    { sessionId, kinds, severityMin, file, fromMark, toMark, limit, offset },
     ctx
   ) => {
     const session = ctx.sessions.get(sessionId);
     if (!session) return unknownSessionError(sessionId);
-    let model = session.model;
-    if (fromMark !== undefined || toMark !== undefined) {
-      const window = resolveWindow(model, { fromMark, toMark });
-      if ("error" in window) return jsonResult(window, { isError: true });
-      model = applyWindow(model, window);
-    }
+    const model = windowedModel(session, { fromMark, toMark });
+    if ("error" in model) return jsonResult(model, { isError: true });
     const resolver = resolverFor(session);
     const findings = computeFindings(model)
       .filter(
         (candidate) =>
           (kinds === undefined || kinds.includes(candidate.kind)) &&
-          (severityMin === undefined || candidate.severity >= severityMin)
+          (severityMin === undefined || candidate.severity >= severityMin) &&
+          matchesFile(candidate.file, file)
       )
       .map((candidate) => withOriginal(resolver, candidate));
-    return jsonResult(paginate(findings, limit));
+    return jsonResult(paginate(findings, limit, offset));
   }
 });

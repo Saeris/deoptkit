@@ -155,12 +155,28 @@ export interface FunctionTicks {
   totalTicks: number;
 }
 
+/**
+ * One CPU sample, retained so ticks can be windowed. Function keys have the form
+ * `${functionName}|${file}|${line}|${column}`, matching the identity `FunctionTicks`
+ * rows are merged by.
+ */
+export interface TickSample {
+  time: number;
+  vmState: string;
+  /** Function key of the frame at the top of the stack, when resolved. */
+  self: string | undefined;
+  /** Distinct function keys anywhere on the stack (including `self`), innermost first. */
+  onStack: string[];
+}
+
 export interface ProfileModel {
   tickCount: number;
   /** Sample counts by VM state (js, gc, compiler, idle, ...). */
   vmStates: Record<string, number>;
   /** Sorted by descending selfTicks. */
   functions: FunctionTicks[];
+  /** Every sample in log order, for time-window filtering. */
+  samples: TickSample[];
 }
 
 /** A function observed via `code-creation`, indexed by source identity. */

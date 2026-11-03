@@ -183,6 +183,34 @@ describe("deoptkit server", () => {
         )
       ).toBe(true);
 
+      // Without offset an agent can never see past the first page of findings, and
+      // without a file filter it cannot focus on the module it is editing.
+      const paged = await client.callTool({
+        name: "get_findings",
+        arguments: { sessionId: String(payload.sessionId), limit: 1, offset: 1 }
+      });
+      const page = textPayload(paged) as unknown as {
+        offset: number;
+        items: unknown[];
+      };
+      expect(page.offset).toBe(1);
+      expect(page.items.length).toBeLessThanOrEqual(1);
+      expect(page.items).toEqual(items.slice(1, 2));
+
+      const unmatched = await client.callTool({
+        name: "get_findings",
+        arguments: {
+          sessionId: String(payload.sessionId),
+          file: "does-not-match"
+        }
+      });
+      const none = textPayload(unmatched) as unknown as {
+        totalCount: number;
+        items: unknown[];
+      };
+      expect(none.items).toEqual([]);
+      expect(none.totalCount).toBe(0);
+
       // Drill-down: the annotated snippet marks the polluted read without any file I/O.
       const fn = await client.callTool({
         name: "get_function",

@@ -1,6 +1,6 @@
 import type { LogModel } from "../model/logModel";
 import type { Finding } from "./findings";
-import { computeFindings } from "./findings";
+import { computeFindings, isUserCode } from "./findings";
 
 export interface PersistingFinding {
   kind: Finding["kind"];
@@ -69,11 +69,6 @@ export const findingIdentity = (found: Finding): string => {
 
 const matchKey = findingIdentity;
 
-const isUserFile = (file: string | undefined): file is string =>
-  file !== undefined &&
-  !file.startsWith("node:") &&
-  !file.includes("/node_modules/");
-
 const MAX_FUNCTION_DELTAS = 20;
 
 export const compareSessions = (
@@ -116,7 +111,7 @@ export const compareSessions = (
       { functionName: string; file: string; selfTicks: number }
     >();
     for (const row of model.profile.functions) {
-      if (!isUserFile(row.file)) continue;
+      if (!isUserCode(row.file)) continue;
       const key = `${row.functionName}|${row.file}`;
       const existing = rows.get(key);
       if (existing) existing.selfTicks += row.selfTicks;
@@ -153,7 +148,7 @@ export const compareSessions = (
   const megamorphicCount = (model: LogModel): number =>
     model.ics.filter(
       (site) =>
-        isUserFile(site.file) &&
+        isUserCode(site.file) &&
         (site.worstState === "megamorphic" || site.worstState === "generic")
     ).length;
   const deoptEvents = (model: LogModel): number =>

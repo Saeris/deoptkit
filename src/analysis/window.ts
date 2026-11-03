@@ -1,4 +1,9 @@
-import type { IcState, LogModel } from "../model/logModel";
+import type {
+  FunctionTicks,
+  IcState,
+  LogModel,
+  ProfileModel
+} from "../model/logModel";
 import { icStateRank } from "../model/logModel";
 
 export interface MarkWindow {
@@ -50,11 +55,64 @@ const inRange = (time: number, { fromTime, toTime }: ResolvedWindow): boolean =>
   time >= fromTime && time <= toTime;
 
 /**
- * Project a model onto a time window for the structural signals (ICs, deopts, map
- * transitions): events outside the range drop, per-site aggregates recompute, and
- * sites left with no events disappear. Timing data (profile ticks) and the map entry
- * registry pass through unwindowed — ticks carry no per-sample retention in the model
- * and the registry is reference material for get_map.
+ * Rebuild a tick row from a sample's function key, the inverse of the parser's
+ * `${functionName}|${file}|${line}|${column}`. Splits from the right so any extra
+ * leading segments stay part of the name.
+ */
+const rowFromKey = (key: string): FunctionTicks => {
+  const segments = key.split("|");
+  const column = segments.pop();
+  const line = segments.pop();
+  const file = segments.pop();
+  const position = (segment: string | undefined): number | undefined =>
+    segment === undefined || segment === "undefined"
+      ? undefined
+      : Number(segment);
+  return {
+    functionName: segments.join("|"),
+    file: file === "undefined" ? undefined : file,
+    line: position(line),
+    column: position(column),
+    selfTicks: 0,
+    totalTicks: 0
+  };
+};
+
+/** Recount the profile from the samples inside the window, ranked like the parser's. */
+const windowProfile = (
+  profile: ProfileModel,
+  window: ResolvedWindow
+): ProfileModel => {
+  const samples = profile.samples.filter(({ time }) => inRange(time, window));
+  const vmStates: Record<string, number> = {};
+  const rows = new Map<string, FunctionTicks>();
+  const rowFor = (key: string): FunctionTicks => {
+    let row = rows.get(key);
+    if (!row) {
+      row = rowFromKey(key);
+      rows.set(key, row);
+    }
+    return row;
+  };
+  for (const sample of samples) {
+    vmStates[sample.vmState] = (vmStates[sample.vmState] ?? 0) + 1;
+    if (sample.self !== undefined) rowFor(sample.self).selfTicks += 1;
+    for (const key of sample.onStack) rowFor(key).totalTicks += 1;
+  }
+  return {
+    tickCount: samples.length,
+    vmStates,
+    functions: [...rows.values()].sort((a, b) => b.selfTicks - a.selfTicks),
+    samples
+  };
+};
+
+/**
+ * Project a model onto a time window: IC, deopt, and map transition events outside
+ * the range drop, per-site aggregates recompute, and sites left with no events
+ * disappear. Profile ticks are recounted from the samples inside the range, so heat
+ * (and therefore finding severity) reflects the window. The map entry registry
+ * passes through unwindowed — it is reference material for get_map.
  */
 export const applyWindow = (
   model: LogModel,
@@ -86,6 +144,8 @@ export const applyWindow = (
         ...site,
         events,
         count: events.length,
+        inlinedCount: events.filter((event) => event.inlinedAt !== undefined)
+          .length,
         reasons,
         firstTime: events[0]?.time ?? site.firstTime,
         lastTime: events.at(-1)?.time ?? site.lastTime
@@ -107,5 +167,6 @@ export const applyWindow = (
         return { ...site, events, count: events.length, propertyNames };
       })
       .filter((site) => site.events.length > 0)
-  }
+  },
+  profile: windowProfile(model.profile, window)
 });

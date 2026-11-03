@@ -10,7 +10,8 @@ import type {
   MapEntry,
   MapTransitionSite,
   Marker,
-  SourcePosition
+  SourcePosition,
+  TickSample
 } from "../model/logModel";
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
@@ -136,6 +137,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   let tickCount = 0;
   const vmStates: Record<string, number> = {};
   const functionTicks = new Map<string, FunctionTicks>();
+  const samples: TickSample[] = [];
   const scripts = new Map<string, string>();
   const functionIndex = new Map<string, FunctionInfo>();
   const markers: Marker[] = [];
@@ -164,9 +166,13 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     return best?.functionName;
   };
 
+  /** Source identity of a function; tick rows and retained samples share this key. */
+  const functionKey = (entry: CodeEntry): string =>
+    `${entry.functionName}|${entry.file}|${entry.line}|${entry.column}`;
+
   /** Merge all optimization tiers of a function into one row keyed by source identity. */
   const tickRowFor = (entry: CodeEntry): FunctionTicks => {
-    const key = `${entry.functionName}|${entry.file}|${entry.line}|${entry.column}`;
+    const key = functionKey(entry);
     let row = functionTicks.get(key);
     if (!row) {
       row = {
@@ -391,7 +397,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     },
     tick: ([
       pc,
-      _time,
+      time,
       _isExternal,
       _tosOrExternal,
       vmState,
@@ -406,16 +412,23 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       if (top) tickRowFor(top).selfTicks += 1;
 
       // Total ticks count each function once per sample, however often it recurs.
-      const onStack = new Set<FunctionTicks>();
-      if (top) onStack.add(tickRowFor(top));
+      // Keyed by function key; insertion order keeps the stack innermost first.
+      const onStack = new Map<string, FunctionTicks>();
+      if (top) onStack.set(functionKey(top), tickRowFor(top));
       for (const field of stack) {
         const address = parseStackAddress(field ?? "", previous);
         if (address === undefined) continue;
         previous = address;
         const entry = codeMap.find(address);
-        if (entry) onStack.add(tickRowFor(entry));
+        if (entry) onStack.set(functionKey(entry), tickRowFor(entry));
       }
-      for (const row of onStack) row.totalTicks += 1;
+      for (const row of onStack.values()) row.totalTicks += 1;
+      samples.push({
+        time: Number(time),
+        vmState: state,
+        self: top ? functionKey(top) : undefined,
+        onStack: [...onStack.keys()]
+      });
     },
     "code-move": ([from, to]): void => {
       codeMap.move(BigInt(from ?? "0"), BigInt(to ?? "0"));
@@ -447,7 +460,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       vmStates,
       functions: [...functionTicks.values()].sort(
         (a, b) => b.selfTicks - a.selfTicks
-      )
+      ),
+      samples
     },
     scripts,
     functionIndex: [...functionIndex.values()],

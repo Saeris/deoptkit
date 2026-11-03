@@ -1,5 +1,9 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as v from "valibot";
+import type { MarkWindow } from "../analysis/window";
+import { applyWindow, resolveWindow } from "../analysis/window";
+import type { LogModel } from "../model/logModel";
+import type { Session } from "../sessions";
 import { jsonResult } from "./defineTool";
 
 export const sessionIdSchema = v.pipe(
@@ -50,6 +54,20 @@ export const toMarkSchema = v.optional(
     )
   )
 );
+
+/**
+ * The session's model scoped to a marker window, or the whole model when neither mark
+ * is given. Every session-scoped tool that accepts fromMark/toMark goes through this.
+ */
+export const windowedModel = (
+  session: Session,
+  window: MarkWindow
+): LogModel | { error: string } => {
+  if (window.fromMark === undefined && window.toMark === undefined)
+    return session.model;
+  const resolved = resolveWindow(session.model, window);
+  return "error" in resolved ? resolved : applyWindow(session.model, resolved);
+};
 
 export const unknownSessionError = (sessionId: string): CallToolResult =>
   jsonResult(

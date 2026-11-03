@@ -27,7 +27,7 @@ export interface Finding {
 }
 
 /** Findings only cover the user's own code; engine internals are queryable via list tools. */
-const isUserCode = (file: string | undefined): file is string =>
+export const isUserCode = (file: string | undefined): file is string =>
   file !== undefined &&
   !file.startsWith("node:") &&
   !file.includes("/node_modules/");

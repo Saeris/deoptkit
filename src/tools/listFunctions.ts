@@ -2,12 +2,15 @@ import * as v from "valibot";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   fileFilterSchema,
+  fromMarkSchema,
   limitSchema,
   matchesFile,
   offsetSchema,
   paginate,
   sessionIdSchema,
-  unknownSessionError
+  toMarkSchema,
+  unknownSessionError,
+  windowedModel
 } from "./shared";
 
 export const listFunctions = defineTool({
@@ -26,19 +29,26 @@ export const listFunctions = defineTool({
         v.description("Sort key (default selfTicks)")
       )
     ),
+    fromMark: fromMarkSchema,
+    toMark: toMarkSchema,
     limit: limitSchema,
     offset: offsetSchema
   }),
-  handler: ({ sessionId, file, sortBy, limit, offset }, ctx) => {
+  handler: (
+    { sessionId, file, sortBy, fromMark, toMark, limit, offset },
+    ctx
+  ) => {
     const session = ctx.sessions.get(sessionId);
     if (!session) return unknownSessionError(sessionId);
+    const model = windowedModel(session, { fromMark, toMark });
+    if ("error" in model) return jsonResult(model, { isError: true });
     const key = sortBy ?? "selfTicks";
-    const rows = session.model.profile.functions
+    const rows = model.profile.functions
       .filter((row) => matchesFile(row.file, file))
       .toSorted((a, b) => b[key] - a[key]);
     return jsonResult({
-      tickCount: session.model.profile.tickCount,
-      vmStates: session.model.profile.vmStates,
+      tickCount: model.profile.tickCount,
+      vmStates: model.profile.vmStates,
       ...paginate(rows, limit, offset)
     });
   }

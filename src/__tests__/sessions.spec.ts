@@ -12,7 +12,7 @@ const emptyModel = (): LogModel => ({
     eventCounts: {},
     transitionSites: []
   },
-  profile: { tickCount: 0, vmStates: {}, functions: [] },
+  profile: { tickCount: 0, vmStates: {}, functions: [], samples: [] },
   scripts: new Map(),
   functionIndex: [],
   markers: [],

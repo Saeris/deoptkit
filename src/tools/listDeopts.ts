@@ -1,5 +1,4 @@
 import * as v from "valibot";
-import { applyWindow, resolveWindow } from "../analysis/window";
 import { resolverFor, withOriginal } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
@@ -11,7 +10,8 @@ import {
   paginate,
   sessionIdSchema,
   toMarkSchema,
-  unknownSessionError
+  unknownSessionError,
+  windowedModel
 } from "./shared";
 
 export const listDeopts = defineTool({
@@ -49,12 +49,8 @@ export const listDeopts = defineTool({
   ) => {
     const session = ctx.sessions.get(sessionId);
     if (!session) return unknownSessionError(sessionId);
-    let model = session.model;
-    if (fromMark !== undefined || toMark !== undefined) {
-      const window = resolveWindow(model, { fromMark, toMark });
-      if ("error" in window) return jsonResult(window, { isError: true });
-      model = applyWindow(model, window);
-    }
+    const model = windowedModel(session, { fromMark, toMark });
+    if ("error" in model) return jsonResult(model, { isError: true });
     const resolver = resolverFor(session);
     const sites = model.deopts
       .filter(

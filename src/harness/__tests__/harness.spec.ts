@@ -7,7 +7,7 @@ import type { Finding } from "../../analysis/findings";
 import { computeFindings } from "../../analysis/findings";
 import { applyWindow, resolveWindow } from "../../analysis/window";
 import { runWorkload } from "../../collect/runner";
-import type { LogModel } from "../../model/logModel";
+import type { FunctionTicks, LogModel } from "../../model/logModel";
 import { parseLog } from "../../parser/parseLog";
 import { SessionStore } from "../../sessions";
 import { getFindings } from "../../tools/getFindings";
@@ -116,6 +116,48 @@ describe("harness markers and windowed analysis", () => {
     if ("error" in clean) throw new Error(clean.error);
     const cleanFindings = computeFindings(applyWindow(model, clean));
     expect(cleanFindings.some(isMegaX)).toBe(false);
+  });
+
+  // Ranking inside a case must use that case's heat, or multi-case bench sessions rank
+  // by whichever case ran longest. Thresholds stay loose: Windows samples at ~15ms.
+  it("scopes profile ticks to the window so findings rank by the window's own heat", () => {
+    const clean = resolveWindow(model, {
+      fromMark: "clean_start",
+      toMark: "clean_end"
+    });
+    if ("error" in clean) throw new Error(clean.error);
+    const windowed = applyWindow(model, clean);
+    const { profile } = windowed;
+    expect(
+      profile.samples.every(
+        ({ time }) => time >= clean.fromTime && time <= clean.toTime
+      )
+    ).toBe(true);
+    expect(profile.tickCount).toBe(profile.samples.length);
+    expect(profile.tickCount).toBeLessThanOrEqual(model.profile.tickCount);
+    // Ticks whose top frame is unresolved have no row, so self ticks can fall short.
+    expect(
+      profile.functions.reduce((sum, row) => sum + row.selfTicks, 0)
+    ).toBeLessThanOrEqual(profile.tickCount);
+    if (model.profile.tickCount > 0) {
+      const getXSelfTicks = (rows: FunctionTicks[]): number =>
+        rows.find(({ functionName }) => functionName === "getX")?.selfTicks ??
+        0;
+      expect(getXSelfTicks(profile.functions)).toBeLessThanOrEqual(
+        getXSelfTicks(model.profile.functions)
+      );
+    }
+
+    // An unbounded window must rebuild the parser's rows exactly: a function key that
+    // failed to round-trip would silently zero that function's heat in every window.
+    const everything = resolveWindow(model, {});
+    if ("error" in everything) throw new Error(everything.error);
+    expect(applyWindow(model, everything).profile).toEqual(model.profile);
+
+    // Deopt sites recount from their kept events, so the inlined share stays a subset.
+    expect(
+      windowed.deopts.every(({ inlinedCount, count }) => inlinedCount <= count)
+    ).toBe(true);
   });
 
   it("exposes windowing through get_findings and rejects unknown marks helpfully", async () => {
