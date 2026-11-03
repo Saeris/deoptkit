@@ -2,6 +2,7 @@ import type { SpawnSyncReturns } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { computeFindings } from "../../analysis/findings";
+import type { Finding } from "../../analysis/findings";
 import { toDiagnostics } from "../../lsp/server";
 import type { LogModel } from "../../model/logModel";
 import { parseLog } from "../../parser/parseLog";
@@ -128,5 +129,70 @@ describe("deoptKit vitest preset, end to end", () => {
     // LSP lines are 0-based; getX is on line 2 of lib.ts.
     expect(first?.range.start.line).toBe(1);
     expect(first?.code).toBe("megamorphic-ic");
+  });
+});
+
+describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
+  let project: E2eProject;
+  let run: SpawnSyncReturns<string>;
+  let findings: Finding[];
+
+  const output = (): string => `${run.stdout}\n${run.stderr}`;
+
+  beforeAll(async () => {
+    ensureDist();
+    project = await createE2eProject({
+      name: "native",
+      presetOptions: "nativeEsm: true"
+    });
+    run = project.run();
+    // Parse leniently: the first test asserts the run, so a broken run fails there
+    // with Vitest's own output instead of an unrelated parse error here.
+    const manifestPath = `${project.outDir}/manifest.json`;
+    const logfiles = existsSync(manifestPath)
+      ? (JSON.parse(readFileSync(manifestPath, "utf8")) as DeoptKitManifest)
+          .logfiles
+      : [];
+    const models = await Promise.all(
+      logfiles.map(async (logfile) => parseLog(logfile))
+    );
+    findings = models.flatMap((model) => computeFindings(model));
+  }, 120_000);
+
+  afterAll(async () => {
+    await project.cleanup();
+    delete process.env["DEOPTKIT_OUT_DIR"];
+  });
+
+  // Without the module runner V8 sees the shipped file, so the finding must land on the
+  // true position with no source-map resolution; that is the whole reason to opt in.
+  // Deliberately not asserted: the absence of a second `x` finding on the bench file.
+  // V8 inlines getX into the caller and the inlined copy of the IC is attributed to the
+  // caller's file until inlining-aware attribution lands.
+  it("reports the megamorphic site at its exact position without source maps", () => {
+    if (run.status !== 0) {
+      throw new Error(
+        `vitest bench exited ${String(run.status)}:\n${output()}`
+      );
+    }
+    const site = findings.find(
+      (finding) =>
+        finding.kind === "megamorphic-ic" &&
+        finding.evidence["key"] === "x" &&
+        finding.file.endsWith("lib.ts")
+    );
+    expect(site).toBeDefined();
+    expect(site?.file).not.toContain("?");
+    expect(site?.line).toBe(2);
+    expect(site?.functionName).toBe("getX");
+  });
+
+  // Native imports make Vitest append ?vitest=<timestamp> to script URLs; if that leaks
+  // into a finding the identity changes on every run and baselines never match.
+  it("leaves no loader query string in any finding location", () => {
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings.filter(({ file }) => file.includes("?vitest="))).toEqual(
+      []
+    );
   });
 });

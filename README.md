@@ -106,7 +106,7 @@ test("parse record", async ({ bench }) => {
 });
 ```
 
-Run `vitest bench`, then `load_manifest { path: ".deopt/manifest.json" }` to load every worker's log as a session. (Coverage must be off — the preset refuses to run otherwise, since instrumentation changes optimization behavior.)
+Run `vitest bench`, then `load_manifest { path: ".deopt/manifest.json" }` to load every worker's log as a session. (Coverage must be off — the preset refuses to run otherwise, since instrumentation changes optimization behavior.) To observe the shipped code at exact source positions, without Vite's module runner in between, use `deoptKit({ nativeEsm: true })`; see the [recipe](./docs/recipes.md) for its requirements.
 
 Full recipes, including SSR apps (Next/Astro via `deoptkit/serve`) and builds, live in [docs/recipes.md](./docs/recipes.md).
 

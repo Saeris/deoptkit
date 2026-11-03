@@ -42,6 +42,17 @@ describe("deoptKit vitest preset", () => {
     expect(process.env["DEOPTKIT_OUT_DIR"]).toBe(outDir);
   });
 
+  // The module runner rewrites imports into property reads that V8 then reports as IC
+  // sites; native mode is what makes "the code V8 sees is the code you ship" true. It
+  // must stay opt-in, so the default config may not carry the Vitest experimental keys.
+  it("only switches Vitest to native ESM when nativeEsm is set", () => {
+    expect(deoptKit({ outDir })).not.toHaveProperty("experimental");
+    expect(deoptKit({ outDir, nativeEsm: true }).experimental).toEqual({
+      viteModuleRunner: false,
+      nodeLoader: false
+    });
+  });
+
   // The whole observation is invalid under coverage instrumentation; failing loudly
   // beats silently reporting optimization behavior of instrumented code.
   it("refuses to run with coverage enabled", () => {

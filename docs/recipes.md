@@ -63,6 +63,8 @@ test("parse record", async ({ bench }) => {
 
 Then: run `vitest bench`, call `load_manifest { path: ".deopt/manifest.json" }`, and query each session windowed to a case (`fromMark: "parse_record_start"`, `toMark: "parse_record_end"`). Coverage must be off — the preset refuses to run otherwise, because instrumented code has different optimization behavior than the code you ship.
 
+By default Vitest runs bench files through Vite's module runner, which rewrites imports into property reads and shifts line numbers (the findings are mapped back through inline source maps, but V8 can also report a few IC sites that exist only in the rewritten code). Pass `deoptKit({ nativeEsm: true })` to run the workers on Node's native ESM loader instead: V8 then observes exactly the shipped code at exact source positions. It requires Node 22.18+ (or 23.6+) so `.ts` bench files load without flags, and the bench files and everything they import must be plain ESM that Node can resolve on its own (relative imports with file extensions, no Vite aliases or plugins, no `vi.mock` or `import.meta.vitest`), so point them at built output, as the rest of this guide recommends. One caveat for now: when V8 inlines a hot call site into its caller, the inlined copy of the site can be reported in the caller's file as well as the original, so the same property access may appear twice.
+
 ## Analyzing a log you already have
 
 Any `v8.log` works, wherever it came from:
