@@ -177,9 +177,22 @@ describe("deoptkit server", () => {
         name: "get_findings",
         arguments: { sessionId: String(payload.sessionId) }
       });
-      const { items } = textPayload(findings) as unknown as {
+      const { items, kinds } = textPayload(findings) as unknown as {
         items: { kind: string; file: string }[];
+        kinds: Record<string, { explanation: string; suggestedFix: string }>;
       };
+      // The six template strings were 37-42% of every findings payload; the legend
+      // carries them once, and an agent reads the kind's text at most once per response.
+      expect(items.length).toBeGreaterThan(0);
+      for (const found of items) {
+        expect("explanation" in found).toBe(false);
+        expect("suggestedFix" in found).toBe(false);
+        expect(kinds[found.kind]?.explanation.length ?? 0).toBeGreaterThan(0);
+        expect(kinds[found.kind]?.suggestedFix.length ?? 0).toBeGreaterThan(0);
+      }
+      expect(Object.keys(kinds).toSorted()).toEqual(
+        [...new Set(items.map(({ kind }) => kind))].toSorted()
+      );
       // Agents pass these strings to Read/Edit; a URL or an absolute path breaks that
       // and wastes a conversion turn.
       const megamorphic = items.filter(
@@ -241,7 +254,92 @@ describe("deoptkit server", () => {
           annotation.note.includes("megamorphic")
         )
       ).toBe(true);
-    }, 90_000);
+
+      // Unbounded histories were 4-5k tokens per page; a bound plus a summary keeps the
+      // two facts an agent acts on: how many shapes hit the site and how it escalated.
+      const ics = await client.callTool({
+        name: "list_ics",
+        arguments: {
+          sessionId: String(payload.sessionId),
+          includeTransitions: true,
+          maxTransitions: 2,
+          states: ["megamorphic"],
+          file: "map-churn.js"
+        }
+      });
+      const { items: sites } = textPayload(ics) as unknown as {
+        items: {
+          key: string;
+          transitionCount: number;
+          transitions: unknown[];
+          transitionsOmitted: number;
+          distinctMaps: number;
+          stateHistory: string;
+          mapAddresses: string[];
+        }[];
+      };
+      const idSite = sites.find(({ key }) => key === "id");
+      if (idSite === undefined)
+        throw new Error("expected a megamorphic `id` site in map-churn.js");
+      expect(idSite.transitions.length).toBeLessThanOrEqual(2);
+      expect(idSite.transitionsOmitted).toBe(
+        idSite.transitionCount - idSite.transitions.length
+      );
+      // Megamorphic means the site saw at least five shapes.
+      expect(idSite.distinctMaps).toBeGreaterThanOrEqual(5);
+      expect(idSite.stateHistory.endsWith("megamorphic")).toBe(true);
+      expect(idSite.mapAddresses.length).toBeGreaterThanOrEqual(1);
+
+      // Closing the loop in one call saves a round trip and the bookkeeping of two
+      // session ids on every iteration.
+      const fixed = await client.callTool({
+        name: "profile_run",
+        arguments: {
+          command: ["node", join(dirname(workload), "map-churn-fixed.js")],
+          cwd: dirname(workload),
+          timeoutMs: 60_000,
+          compareTo: String(payload.sessionId)
+        }
+      });
+      expect(fixed.isError ?? false).toBe(false);
+      const { comparison } = textPayload(fixed) as unknown as {
+        comparison: {
+          base: { sessionId: string };
+          resolved: {
+            kind: string;
+            evidence: { key?: string };
+          }[];
+          kinds: Record<string, unknown>;
+        };
+      };
+      expect(comparison.base.sessionId).toBe(String(payload.sessionId));
+      expect(
+        comparison.resolved.some(
+          (found) =>
+            found.kind === "megamorphic-ic" && found.evidence.key === "id"
+        )
+      ).toBe(true);
+      expect(comparison.kinds["megamorphic-ic"]).toBeDefined();
+      for (const found of comparison.resolved) {
+        expect("explanation" in found).toBe(false);
+      }
+    }, 120_000);
+
+    // A request that cannot be fulfilled must not cost a workload run: process.exit(3)
+    // would surface as an exit code in the payload if the command had been spawned.
+    it("profile_run rejects an unknown compareTo before running the command", async () => {
+      const result = await client.callTool({
+        name: "profile_run",
+        arguments: {
+          command: ["node", "-e", "process.exit(3)"],
+          compareTo: "nope"
+        }
+      });
+      expect(result.isError).toBe(true);
+      const payload = textPayload(result);
+      expect(payload.error).toMatch(/Unknown session/u);
+      expect(Object.keys(payload)).toEqual(["error"]);
+    });
 
     it("reports unknown sessions as errors on analysis tools", async () => {
       const result = await client.callTool({

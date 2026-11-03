@@ -7,9 +7,11 @@ import {
   limitSchema,
   matchesFile,
   offsetSchema,
+  kindsLegend,
   paginate,
   presentLocation,
   sessionIdSchema,
+  slimFinding,
   toMarkSchema,
   unknownSessionError,
   windowedModel
@@ -29,7 +31,7 @@ export const getFindings = defineTool({
   title: "Ranked findings",
   description:
     "The primary analysis entry point: everything wrong in a session, ranked worst-first. " +
-    "Each finding has a severity (1-100), source location, explanation, and suggested fix. " +
+    "Each finding has a severity (1-100), source location, and evidence; the explanation and suggested fix for each kind present are returned once under `kinds`. " +
     "Start here, fix the top finding, re-profile, and compare.",
   annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
@@ -71,6 +73,11 @@ export const getFindings = defineTool({
           matchesFile(candidate.file, file)
       )
       .map((candidate) => presentLocation(session, candidate));
-    return jsonResult(paginate(findings, limit, offset));
+    const page = paginate(findings, limit, offset);
+    return jsonResult({
+      ...page,
+      items: page.items.map(slimFinding),
+      kinds: kindsLegend(page.items)
+    });
   }
 });

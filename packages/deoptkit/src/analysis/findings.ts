@@ -32,7 +32,7 @@ export const isUserCode = (file: string | undefined): file is string =>
   !file.startsWith("node:") &&
   !file.includes("/node_modules/");
 
-const EXPLANATIONS: Record<
+export const FINDING_EXPLANATIONS: Record<
   FindingKind,
   { explanation: string; suggestedFix: string }
 > = {
@@ -130,7 +130,7 @@ const finding = (
   column: site.column,
   functionName: site.functionName,
   summary,
-  ...EXPLANATIONS[kind],
+  ...FINDING_EXPLANATIONS[kind],
   evidence
 });
 

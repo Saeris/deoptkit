@@ -1,5 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as v from "valibot";
+import type { Finding, FindingKind } from "../analysis/findings";
+import { FINDING_EXPLANATIONS } from "../analysis/findings";
 import { toWorkspacePath } from "../analysis/paths";
 import type { MarkWindow } from "../analysis/window";
 import { applyWindow, resolveWindow } from "../analysis/window";
@@ -134,3 +136,31 @@ export const presentFile = <T extends { file?: string | undefined }>(
   item.file === undefined
     ? item
     : { ...item, file: toWorkspacePath(item.file, session.workspaceRoot) };
+
+/** A finding as tools report it: the per-kind text lives in the response's `kinds` legend. */
+export type SlimFinding<T extends Finding = Finding> = Omit<
+  T,
+  "explanation" | "suggestedFix"
+>;
+
+export const slimFinding = <T extends Finding>({
+  explanation: _explanation,
+  suggestedFix: _suggestedFix,
+  ...rest
+}: T): SlimFinding<T> => rest;
+
+/**
+ * Explanation and suggested fix for every kind present in `findings`, once each.
+ * Measured 37-42% of a get_findings payload before this legend existed.
+ */
+export const kindsLegend = (
+  findings: ReadonlyArray<Pick<Finding, "kind">>
+): Partial<
+  Record<FindingKind, { explanation: string; suggestedFix: string }>
+> =>
+  Object.fromEntries(
+    [...new Set(findings.map(({ kind }) => kind))].map((kind) => [
+      kind,
+      FINDING_EXPLANATIONS[kind]
+    ])
+  );
