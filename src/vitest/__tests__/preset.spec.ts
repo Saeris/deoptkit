@@ -21,7 +21,7 @@ describe("deoptKit vitest preset", () => {
   it("configures the forks pool with the V8 flag set and per-pid logfiles", () => {
     const config = deoptKit({ outDir });
     expect(config.pool).toBe("forks");
-    const { execArgv } = config.poolOptions.forks;
+    const { execArgv } = config;
     expect(execArgv).toEqual(
       expect.arrayContaining(["--log-ic", "--log-deopt", "--prof"])
     );

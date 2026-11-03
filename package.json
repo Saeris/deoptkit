@@ -75,7 +75,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "vitest": ">=4"
+    "vitest": ">=5"
   },
   "peerDependenciesMeta": {
     "vitest": {
@@ -95,25 +95,25 @@
   },
   "devDependencies": {
     "@saeris/configs": "^1.6.1",
-    "@types/node": "^26.0.1",
-    "@varlock/bumpy": "^1.18.0",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@types/node": "^26.6.6",
+    "@varlock/bumpy": "^1.19.0",
+    "@vitest/coverage-v8": "catalog:",
     "typescript": "6.0.3",
-    "vite-plus": "latest",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "resolutions": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
+    "vitest": "5.0.5"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "yarn@4.17.0",
+  "packageManager": "yarn@4.18.1",
   "dependencies": {
     "@jridgewell/trace-mapping": "^0.3.31",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@valibot/to-json-schema": "^1.7.1",
-    "valibot": "^1.4.2"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@valibot/to-json-schema": "^1.8.0",
+    "valibot": "^1.5.0"
   }
 }

@@ -38,7 +38,7 @@ Caveat: schema-level variety can overstate what one call site sees in production
 
 ## Vitest bench mode (`deoptkit/vitest`)
 
-For projects already using `vitest bench`. The preset forks workers under V8 logging (one log per worker) and writes a manifest on teardown; `benchObserved` gives each case its own window markers.
+For projects already using `vitest bench` (Vitest 5+ — `benchObserved` wraps the `bench` test-context fixture). The preset forks workers under V8 logging (one log per worker) and writes a manifest on teardown; `benchObserved` gives each case its own window markers.
 
 ```ts
 // vite.config.ts
@@ -52,10 +52,13 @@ export default defineConfig({
 
 ```ts
 // src/__benchmarks__/parse.bench.ts
+import { test } from "vitest";
 import { benchObserved } from "deoptkit/bench";
 import { parseRecord } from "../parse";
 
-benchObserved("parse record", () => parseRecord(next()));
+test("parse record", async ({ bench }) => {
+  await benchObserved(bench, "parse record", () => parseRecord(next())).run();
+});
 ```
 
 Then: run `vitest bench`, call `load_manifest { path: ".deopt/manifest.json" }`, and query each session windowed to a case (`fromMark: "parse_record_start"`, `toMark: "parse_record_end"`). Coverage must be off — the preset refuses to run otherwise, because instrumented code has different optimization behavior than the code you ship.

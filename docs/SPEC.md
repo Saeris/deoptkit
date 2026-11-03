@@ -175,9 +175,9 @@ function × hit count.
 
 - Detect V8 version via `node -p process.versions.v8` on the target executable.
 - Prepare version-appropriate flags (modern: `--log-deopt --log-ic --log-maps
---log-maps-details --log-code --log-source-code --prof
---log-internal-timer-events --detailed-line-info --logfile=<tmp>
---no-logfile-per-isolate`), honoring category toggles.
+  --log-maps-details --log-code --log-source-code --prof
+  --log-internal-timer-events --detailed-line-info --logfile=<tmp>
+  --no-logfile-per-isolate`), honoring category toggles.
 - Spawn with inherited stdio captured (tail returned in tool result), enforce
   timeout, clean up temp `--redirect-code-traces` artifacts.
 - Hosts: **Node.js only in v1.** The host abstraction (from dexnode) stays so

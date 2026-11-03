@@ -17,8 +17,9 @@ const sanitizeLabel = (label: string): string =>
  */
 export const mark = (label: string): string => {
   const safe = sanitizeLabel(label);
-  // eslint-disable-next-line no-eval -- the eval IS the mechanism: only a freshly
-  // compiled, uniquely named function produces the log event that carries the marker.
+  // The eval IS the mechanism: only a freshly compiled, uniquely named function
+  // produces the log event that carries the marker.
+  // oxlint-disable-next-line no-eval
   (0, eval)(`(function __DEOPT_MARK__${safe}__(){})`)();
   return safe;
 };

@@ -83,6 +83,8 @@ Schema-driven inputs (Valibot + [Valimock](https://github.com/Saeris/valimock)) 
 
 ### Vitest bench mode
 
+Requires Vitest 5, where `bench` is a test-context fixture.
+
 ```ts
 // vite.config.ts
 import { defineConfig } from "vitest/config";
@@ -95,10 +97,13 @@ export default defineConfig({
 
 ```ts
 // src/__benchmarks__/parse.bench.ts
+import { test } from "vitest";
 import { benchObserved } from "deoptkit/bench";
 import { parseRecord } from "../parse";
 
-benchObserved("parse record", () => parseRecord(next()));
+test("parse record", async ({ bench }) => {
+  await benchObserved(bench, "parse record", () => parseRecord(next())).run();
+});
 ```
 
 Run `vitest bench`, then `load_manifest { path: ".deopt/manifest.json" }` to load every worker's log as a session. (Coverage must be off — the preset refuses to run otherwise, since instrumentation changes optimization behavior.)

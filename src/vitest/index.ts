@@ -12,7 +12,7 @@ export interface DeoptKitPresetOptions {
 
 export interface DeoptKitTestConfig {
   pool: "forks";
-  poolOptions: { forks: { execArgv: string[] } };
+  execArgv: string[];
   globalSetup: string[];
 }
 
@@ -42,11 +42,7 @@ export const deoptKit = (
   process.env["DEOPTKIT_OUT_DIR"] = outDir;
   return {
     pool: "forks",
-    poolOptions: {
-      forks: {
-        execArgv: v8FlagsFor(join(outDir, "v8-%p.log"), options.categories)
-      }
-    },
+    execArgv: v8FlagsFor(join(outDir, "v8-%p.log"), options.categories),
     globalSetup: ["deoptkit/vitest/global-setup"]
   };
 };
