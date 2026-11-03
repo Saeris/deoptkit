@@ -6,17 +6,17 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 
 ## Execution order & status
 
-| Plan | Title                                                                  | Priority | Effort | Depends on    | Status      |
-| ---- | ---------------------------------------------------------------------- | -------- | ------ | ------------- | ----------- |
-| 001  | Parse inlined deopt locations and attribute deopt sites to functions   | P1       | S      | —             | DONE        |
-| 002  | Remove `development` export conditions that point at unshipped `src/`  | P1       | S      | —             | DONE        |
-| 003  | Normalize script URLs by stripping query strings and fragments         | P1       | S      | —             | DONE        |
-| 004  | End-to-end test for the `deoptkit/vitest` bench preset                 | P1       | M      | 002           | DONE        |
-| 005  | Make the vitest preset write `findings.json` so the editor loop closes | P1       | M      | 004           | DONE        |
-| 006  | Add an opt-in `nativeEsm` mode to the vitest preset                    | P2       | S      | 002, 003, 004 | DONE        |
-| 007  | Window profile ticks and consolidate the tool layer                    | P2       | M      | —             | DONE        |
-| 008  | Add MCP tool titles, annotations, and structured content               | P2       | M      | —             | DONE        |
-| 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline | P2       | L      | 005           | IN PROGRESS |
+| Plan | Title                                                                  | Priority | Effort | Depends on    | Status                                                                                       |
+| ---- | ---------------------------------------------------------------------- | -------- | ------ | ------------- | -------------------------------------------------------------------------------------------- |
+| 001  | Parse inlined deopt locations and attribute deopt sites to functions   | P1       | S      | —             | DONE                                                                                         |
+| 002  | Remove `development` export conditions that point at unshipped `src/`  | P1       | S      | —             | DONE                                                                                         |
+| 003  | Normalize script URLs by stripping query strings and fragments         | P1       | S      | —             | DONE                                                                                         |
+| 004  | End-to-end test for the `deoptkit/vitest` bench preset                 | P1       | M      | 002           | DONE                                                                                         |
+| 005  | Make the vitest preset write `findings.json` so the editor loop closes | P1       | M      | 004           | DONE                                                                                         |
+| 006  | Add an opt-in `nativeEsm` mode to the vitest preset                    | P2       | S      | 002, 003, 004 | DONE                                                                                         |
+| 007  | Window profile ticks and consolidate the tool layer                    | P2       | M      | —             | DONE                                                                                         |
+| 008  | Add MCP tool titles, annotations, and structured content               | P2       | M      | —             | DONE                                                                                         |
+| 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline | P2       | L      | 005           | BLOCKED (step 1 done; awaiting the maintainer's layout decision in docs/VSCODE_EXTENSION.md) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
