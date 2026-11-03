@@ -50,6 +50,8 @@ const icSite = (file = userFile): LogModel["ics"][number] => ({
   line: 3,
   column: 5,
   key: "x",
+  keys: ["x"],
+  distinctKeys: 1,
   worstState: "monomorphic",
   transitions: []
 });
