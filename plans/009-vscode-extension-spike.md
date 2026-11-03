@@ -1,26 +1,29 @@
-# Plan 009: VSCode extension spike — layout decision, skeleton, publishing pipeline
+# Plan 009: VSCode extension — thin `deoptkit lsp` client in `extensions/deoptkit-vscode`
 
-> **Executor instructions**: This is a spike plan: Step 1 produces a decision memo and then STOPS for the maintainer's choice. Steps 2–5 are executed only after that choice is recorded. Follow every verification command. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat b733901..HEAD -- src/lsp src/main.ts package.json .bumpy .github/workflows` and `git status --short` on those paths. Confirm plan 005 is DONE (a live `findings.json` producer exists). Compare the excerpts below with the live files; on a mismatch, STOP.
+> **Drift check (run first)**: confirm plan 010 is DONE in `plans/README.md`, `ls extensions` fails (no extensions yet), and `git diff --stat 4e0de7e..HEAD -- packages/deoptkit/package.json packages/deoptkit/vite.config.ts .bumpy/_config.json .github/workflows/release.yml .github/workflows/ci.yml .gitignore package.json README.md` shows only changes made by plans 011–019 (bench script, plugin rows, `scripts`); compare the excerpts below with the live files and STOP on a mismatch in `exports`, `pack.entry`, `.bumpy/_config.json`, or the workflows.
 
 ## Status
 
 - **Priority**: P2
-- **Effort**: L (coarse; the spike itself is M, the full extension depends on the layout decision)
+- **Effort**: M (the layout decision and conversion already landed in plan 010)
 - **Risk**: MED
-- **Depends on**: plans/005-vitest-preset-writes-findings-json.md, plans/010-yarn-workspace-conversion.md (the maintainer chose Option A on 2026-11-03; plan 010 performs the layout change Step 2 describes)
+- **Depends on**: plans/005-vitest-preset-writes-findings-json.md, plans/010-yarn-workspace-conversion.md
 - **Category**: direction
-- **Planned at**: commit `b733901`, 2026-11-03
+- **Planned at**: commit `4e0de7e`, 2026-11-03 (revised; the original spike's Step 1 produced `docs/VSCODE_EXTENSION.md` at `8cf852c`)
 
 ## Why this matters
 
-`deoptkit lsp` publishes findings as standard LSP diagnostics, and Neovim, Helix, and Zed can attach to it with a one-line config. VSCode, the editor the primary audience uses alongside Claude Code, has no generic LSP client, so VSCode users get squiggles only through a dedicated extension. The README names this as the tracked next step and BENCHMARKING §8 scopes it as "a thin projection over the maintained engine and findings interchange, never load-bearing logic". The maintainer's mirrordown repository already publishes VSCode extensions with the same toolchain (Vite+, bumpy, vsce), so the publishing pipeline is a known pattern to copy rather than design. The open question is repository layout: this repo is a single published package at the root, while mirrordown is a Yarn workspace with a private root and `extensions/*`. That decision belongs to the maintainer; this spike lays out both options with their costs and builds the skeleton once chosen.
+`deoptkit lsp` publishes findings as standard LSP diagnostics and Neovim, Helix, and Zed attach to it with one line of config, but VSCode, the editor the primary audience uses next to Claude Code, has no generic LSP client. The maintainer decided (memo `docs/VSCODE_EXTENSION.md`, "Decision", 2026-11-03) to host the extension in this repository as a workspace package that bundles the server and releases in lockstep with the engine through bumpy. This plan builds that thin client: it starts the server, lets `vscode-languageclient` render what it publishes, and adds nothing of its own (BENCHMARKING §8: "a thin projection over the maintained engine and findings interchange, never load-bearing logic").
 
 ## Current state
 
-- `src/lsp/server.ts` — `runLsp(args, streams?)`: stdio LSP server, `--findings <path>` (default `.deopt/findings.json`), `initialize` → `{ capabilities: { textDocumentSync: 0 }, serverInfo }`, pushes `textDocument/publishDiagnostics` on every change of the findings file (polling every 250 ms), downgrades stale findings. `src/main.ts` dispatches `deoptkit lsp`.
-- `package.json` — single package `deoptkit`, `bin: ./dist/main.mjs`, `packageManager: yarn@4.18.1`, no `workspaces`, `private` absent.
+- Decisions recorded in `docs/VSCODE_EXTENSION.md` ("Decision"): publisher `saeris`; name `deoptkit-vscode`, display name `deoptkit`; `engines.vscode: ^1.125.0`; server started as a `module` over stdio, preferring the workspace's installed `deoptkit` (`<folder>/node_modules/deoptkit/dist/main.mjs`) and falling back to a server bundled in the extension, with `deoptkit.serverCommand` overriding both; no run-bench command; first workspace folder only; `extensions/*/.vscode/launch.json` committed through a `.gitignore` exception. The memo's "Behaviour" and "Settings" sections describe the client; its "Smoke test" heading is empty and this plan fills it.
+- Repository layout after plan 010: private root `package.json` (`"workspaces": ["packages/*", "extensions/*"]`, devDependencies include `vite-plus`, `vitest`, `typescript`, `@saeris/configs`, `@varlock/bumpy`), root `vite.config.ts` (`lint`, `fmt`, `run.tasks.build: vp run -r build`, `test.projects: ["packages/*"]`), root `tsconfig.json` (`include: ["**/*.ts"]`, excludes `node_modules`, `.yarn`, `.claude`, `**/dist/**`), the engine at `packages/deoptkit`.
+- `packages/deoptkit/package.json` `exports` (all pointing at `./dist/*`): `.`, `./harness`, `./vitest`, `./vitest/global-setup`, `./bench`, `./serve`, `./package.json`. No `./lsp` export; `runLsp` is reachable only through the bin (`src/main.ts` dispatches `deoptkit lsp`).
+- `packages/deoptkit/vite.config.ts` `pack.entry`: `index`, `main`, `harness`, `vitest`, `vitest-global-setup`, `bench`, `serve` (all `./src/...`); `format: ["esm"]`, `dts: true`, `clean: true`, `outDir: ./dist`.
+- `packages/deoptkit/src/lsp/server.ts`: `export const runLsp = async (args: string[], streams?: LspStreams): Promise<number>`; `--findings <path>` (default `.deopt/findings.json`) resolved against `process.cwd()`; polls the file every 250 ms; `initialize` returns `{ capabilities: { textDocumentSync: 0 }, serverInfo: { name: "deoptkit", version } }`; it imports `../../package.json` for the version.
 - `.bumpy/_config.json`:
 
   ```json
@@ -37,40 +40,202 @@
   }
   ```
 
-- `.github/workflows/release.yml` — `bump` and `publish` jobs run `vp dlx @varlock/bumpy ci release` with `GH_TOKEN`, `BUMPY_GH_TOKEN`, `NO_COLOR`, `YARN_ENABLE_COLORS`; the publish job runs `vp pack` first. Gated on `github.repository == 'Saeris/deoptkit'`.
-- `.yarnrc.yml` carries a `catalog:` block (vite-plus, vitest, vite, @vitest/coverage-v8) written by `vp migrate`.
+  Bumpy 1.19's schema (`node_modules/@varlock/bumpy/config-schema.json`) accepts per-package `buildCommand`, `publishCommand`, `skipNpmPublish`, and `releaseTriggeringDevDeps` ("Names (or globs) of devDependencies that are release-relevant: a change to one requires a release of this package, and (for internal workspace deps) its own releases cascade here ... The usual reason is a dep bundled into the published output"). Root-config commands are always trusted; this repo uses the root-config form, so no `allowCustomCommands`.
 
-The mirrordown pattern (from `C:\GitHub\@saeris\markdown`, read during the audit; inlined here because the executor may not have access):
+- `.github/workflows/release.yml`: `changes` job filters `packages/*/package.json` and `extensions/*/package.json`; `bump` and `publish` jobs run `vp dlx @varlock/bumpy ci release` with `GH_TOKEN`, `BUMPY_GH_TOKEN`, `NO_COLOR`, `YARN_ENABLE_COLORS`; the publish job runs `vp -C packages/deoptkit pack` first. `.github/workflows/ci.yml`: `vp check` then `vp test` (plan 018 may add a gate step after them).
+- Root `.gitignore` contains the line `.vscode` (ignores every `.vscode` directory) and `**/dist/`.
+- Versions on npm (checked 2026-11-03): `vscode-languageclient` 11.0.0 (`engines.vscode ^1.91.0`), `@types/vscode` 1.144.0 (pin `^1.125.0` to match `engines`), `@vscode/vsce` 4.1.0 (`engines.node >= 22`).
+- Mirrordown's extension files to copy (from `C:\GitHub\@saeris\markdown\extensions\markdown-abbr`), inlined:
 
-`extensions/markdown-abbr/package.json` (relevant fields)
+  `.vscodeignore`:
+
+  ```
+  .vscode/**
+  .gitignore
+  node_modules
+  src
+  **/*.map
+  **/*.ts
+  vite.config.*
+  tsconfig.json
+  ```
+
+  `tsconfig.json`:
+
+  ```json
+  {
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+      "rootDir": "src",
+      "outDir": "dist"
+    },
+    "include": ["src"]
+  }
+  ```
+
+  `vite.config.ts` (its `pack` block bundles the workspace plugin into a CJS extension):
+
+  ```ts
+  import { defineConfig } from "vite-plus";
+
+  export default defineConfig({
+    run: {
+      tasks: {
+        build: {
+          command: "vp pack && vp exec vsce package --no-dependencies",
+          cache: true
+        }
+      }
+    },
+    pack: {
+      entry: "src/index.ts",
+      deps: {
+        resolveDepSubpath: true,
+        alwaysBundle: [/^@mirrordown\//]
+      },
+      dts: false,
+      format: "cjs"
+    }
+  });
+  ```
+
+- Package README, "Inline editor diagnostics (LSP)" (`packages/deoptkit/README.md`), ends with the paragraph beginning "**VSCode** has no built-in generic LSP client, so a dedicated deoptkit extension is the tracked next step".
+- Root `README.md` has a "Packages" table (rows for `deoptkit` and, after plan 019, the Claude Code plugin).
+
+Conventions: Vite+ for everything; soft-wrapped markdown; no attribution lines; bump files under `.bumpy/` keyed by package name.
+
+## Commands you will need
+
+| Purpose                         | Command                                                                   | Expected on success                                               |
+| ------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Install                         | `vp install`                                                              | exit 0; `yarn workspaces list` shows `extensions/deoptkit-vscode` |
+| Build the engine (needed first) | `vp -C packages/deoptkit pack`                                            | `Build complete`; `packages/deoptkit/dist/lsp.mjs` exists         |
+| Build the extension             | `vp -C extensions/deoptkit-vscode pack`                                   | `Build complete`; `dist/extension.cjs` and `dist/server.cjs`      |
+| Package the extension           | `cd extensions/deoptkit-vscode && vp exec vsce package --no-dependencies` | `deoptkit-vscode-0.0.0.vsix` written                              |
+| List the vsix                   | `cd extensions/deoptkit-vscode && vp exec vsce ls --no-dependencies`      | lists `dist/extension.cjs`, `dist/server.cjs`, no `node_modules`  |
+| Format + lint + typecheck       | `vp check --fix`                                                          | clean                                                             |
+| Tests                           | `vp test`                                                                 | all pass (the extension has no test project)                      |
+| Bumpy sees the extension        | `vp dlx @varlock/bumpy status`                                            | lists `deoptkit-vscode` with its pending bump                     |
+
+## Scope
+
+**In scope**:
+
+- `extensions/deoptkit-vscode/` (create): `package.json`, `vite.config.ts`, `tsconfig.json`, `.vscodeignore`, `src/extension.ts`, `src/server.ts`, `README.md`, `CHANGELOG.md` (empty), `LICENSE.md` (copy of root), `.vscode/launch.json`
+- `packages/deoptkit/package.json` (`./lsp` export), `packages/deoptkit/vite.config.ts` (`lsp` entry), `packages/deoptkit/src/__tests__/packageExports.spec.ts` (only if the new export needs a case; it should pass unchanged)
+- Root `package.json` (`@vscode/vsce` devDependency), `.bumpy/_config.json`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `.gitignore`
+- `packages/deoptkit/README.md` (the VSCode paragraph), root `README.md` (Packages row)
+- `docs/VSCODE_EXTENSION.md` ("Smoke test" section)
+- `.bumpy/009-vscode-extension.md` (create)
+
+**Out of scope**:
+
+- Decorations, CodeLens, gutter icons, status bar, commands, multi-root support: not in the thin client.
+- Any logic in the extension beyond choosing and starting the server.
+- `packages/deoptkit/src/lsp/**` (the server is unchanged; only an export is added).
+- Marketplace publishing itself (needs the `VSCE_PAT` secret the maintainer configures).
+
+## Git workflow
+
+- Branch: `exec/plan-009` in a dedicated worktree; stay there.
+- Two commits: `Engine: export deoptkit/lsp for bundling the language server`, then `VSCode: thin LSP client extension and vsce publishing pipeline`.
+- Bump file `.bumpy/009-vscode-extension.md`:
+
+  ```markdown
+  ---
+  "deoptkit": minor
+  "deoptkit-vscode": minor
+  ---
+
+  Added the `deoptkit/lsp` export (the language server as a library entry) and the `deoptkit-vscode` extension, a thin VSCode client that starts `deoptkit lsp` from the workspace's installed deoptkit or from the server bundled with the extension and shows findings as diagnostics.
+  ```
+
+- Do NOT push or open a PR. No attribution lines.
+
+## Steps
+
+### Step 1: The `deoptkit/lsp` export
+
+In `packages/deoptkit/vite.config.ts` add `lsp: "./src/lsp/server.ts"` to `pack.entry`. In `packages/deoptkit/package.json` add, after `./serve`:
+
+```json
+    "./lsp": {
+      "import": {
+        "types": "./dist/lsp.d.mts",
+        "default": "./dist/lsp.mjs"
+      }
+    },
+```
+
+Commit as `Engine: export deoptkit/lsp for bundling the language server`.
+
+**Verify**: `vp -C packages/deoptkit pack` → `Build complete` and `ls packages/deoptkit/dist/lsp.mjs packages/deoptkit/dist/lsp.d.mts` lists both; `vp -C packages/deoptkit test src/__tests__/packageExports.spec.ts` → passes; `cd packages/deoptkit && node --input-type=module -e "const m = await import('deoptkit/lsp'); console.log(Object.keys(m))"` prints a list containing `runLsp`.
+
+### Step 2: Extension package
+
+Create `extensions/deoptkit-vscode/package.json`:
 
 ```json
 {
-  "name": "markdown-abbr",
-  "displayName": "Markdown Abbreviation <abbr>",
-  "version": "0.1.2",
-  "publisher": "saeris",
-  "main": "./dist/index.cjs",
-  "browser": "./dist/index.cjs",
-  "devDependencies": {
-    "@mirrordown/mdit-abbr": "workspace:*",
-    "@types/vscode": "^1.125.0"
+  "name": "deoptkit-vscode",
+  "displayName": "deoptkit",
+  "version": "0.0.0",
+  "description": "V8 deoptimization findings from deoptkit (megamorphic inline caches, deopt loops, hidden-class churn) as inline diagnostics",
+  "categories": ["Linters", "Other"],
+  "keywords": ["v8", "performance", "deoptimization", "profiling"],
+  "license": "MIT",
+  "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Saeris/deoptkit.git",
+    "directory": "extensions/deoptkit-vscode"
   },
-  "contributes": { "markdown.markdownItPlugins": true },
-  "activationEvents": [],
-  "engines": { "vscode": "^1.125.0" },
-  "bumpy": {
-    "buildCommand": "vp pack && vp exec vsce package --no-dependencies",
-    "publishCommand": "vp exec vsce publish --no-dependencies",
-    "skipNpmPublish": true
+  "publisher": "saeris",
+  "main": "./dist/extension.cjs",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "workspaceContains:.deopt/findings.json"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "deoptkit",
+      "properties": {
+        "deoptkit.findingsPath": {
+          "type": "string",
+          "default": ".deopt/findings.json",
+          "description": "The findings interchange written by `deoptkit ci` or the deoptkit/vitest preset, relative to the workspace folder."
+        },
+        "deoptkit.serverCommand": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Command that starts the language server, e.g. [\"npx\", \"deoptkit\", \"lsp\"]. Leave empty to use the workspace's installed deoptkit, or the server bundled with this extension when there is none."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "vp pack && vp exec vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.125.0",
+    "deoptkit": "workspace:*",
+    "vscode-languageclient": "^11.0.0"
   }
 }
 ```
 
-`extensions/markdown-abbr/vite.config.ts`
+`vite.config.ts`:
 
 ```ts
 import { defineConfig } from "vite-plus";
+
 export default defineConfig({
   run: {
     tasks: {
@@ -80,133 +245,206 @@ export default defineConfig({
       }
     }
   },
+  // The extension host provides `vscode`; everything else must be inside the .vsix.
   pack: {
-    entry: "src/index.ts",
-    deps: { alwaysBundle: [/^@mirrordown\//] },
+    entry: { extension: "src/extension.ts", server: "src/server.ts" },
+    deps: {
+      neverBundle: ["vscode"],
+      alwaysBundle: ["vscode-languageclient", "deoptkit"]
+    },
     dts: false,
-    format: "cjs"
+    format: "cjs",
+    outDir: "./dist"
   }
 });
 ```
 
-`extensions/markdown-abbr/.vscodeignore`
+`tsconfig.json` and `.vscodeignore` exactly as mirrordown's (inlined above). `CHANGELOG.md` empty (bumpy writes it); `LICENSE.md` copied from the root.
+
+`src/server.ts` (the bundled server entry):
+
+```ts
+// Stdio entry for the server bundled with the extension; `deoptkit lsp` behaviour.
+import { runLsp } from "deoptkit/lsp";
+
+runLsp(process.argv.slice(2)).then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (error: unknown) => {
+    process.stderr.write(`deoptkit lsp failed: ${String(error)}\n`);
+    process.exitCode = 1;
+  }
+);
+```
+
+`src/extension.ts`:
+
+```ts
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import * as vscode from "vscode";
+import {
+  LanguageClient,
+  TransportKind,
+  type ServerOptions
+} from "vscode-languageclient/node";
+
+let client: LanguageClient | undefined;
+
+const LANGUAGES = [
+  "javascript",
+  "javascriptreact",
+  "typescript",
+  "typescriptreact"
+];
+
+/**
+ * Which server to run, in order of preference: the user's explicit command, the
+ * workspace's own installed deoptkit (the same version that wrote findings.json),
+ * else the copy bundled with this extension. `module` servers run on the extension
+ * host's Node, so nothing depends on the user's PATH.
+ */
+const serverFor = (
+  folder: vscode.WorkspaceFolder,
+  context: vscode.ExtensionContext
+): ServerOptions => {
+  const config = vscode.workspace.getConfiguration("deoptkit");
+  const findings = join(
+    folder.uri.fsPath,
+    config.get<string>("findingsPath") ?? ".deopt/findings.json"
+  );
+  const custom = config.get<string[]>("serverCommand") ?? [];
+  const options = { cwd: folder.uri.fsPath };
+  if (custom.length > 0) {
+    const [command = "", ...args] = custom;
+    return { command, args: [...args, "--findings", findings], options };
+  }
+  const installed = join(
+    folder.uri.fsPath,
+    "node_modules",
+    "deoptkit",
+    "dist",
+    "main.mjs"
+  );
+  if (existsSync(installed)) {
+    return {
+      module: installed,
+      transport: TransportKind.stdio,
+      args: ["lsp", "--findings", findings],
+      options
+    };
+  }
+  return {
+    module: context.asAbsolutePath("dist/server.cjs"),
+    transport: TransportKind.stdio,
+    args: ["--findings", findings],
+    options
+  };
+};
+
+export const activate = async (
+  context: vscode.ExtensionContext
+): Promise<void> => {
+  // Thin client: one server for the first workspace folder (memo decision 6).
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (folder === undefined) return;
+  client = new LanguageClient(
+    "deoptkit",
+    "deoptkit",
+    serverFor(folder, context),
+    {
+      documentSelector: LANGUAGES.map((language) => ({
+        scheme: "file",
+        language
+      }))
+    }
+  );
+  context.subscriptions.push(client);
+  await client.start();
+};
+
+export const deactivate = (): Thenable<void> | undefined => client?.stop();
+```
+
+`.vscode/launch.json` (standard "Run Extension" configuration: `type: "extensionHost"`, `args: ["--extensionDevelopmentPath=${workspaceFolder}/extensions/deoptkit-vscode"]`, `preLaunchTask` omitted). `README.md`: what it shows, how findings get produced (`deoptkit ci` / the vitest preset), the two settings, the server-selection order, the first-folder limitation, and a link to the package README.
+
+Root `.gitignore`: after the `.vscode` line add
 
 ```
-.vscode/**
-.gitignore
-node_modules
-src
-**/*.map
-**/*.ts
-vite.config.*
-tsconfig.json
+!extensions/*/.vscode/
+extensions/*/.vscode/*
+!extensions/*/.vscode/launch.json
 ```
 
-Root `package.json` there is `"private": true` with `"workspaces": ["docs", "extensions/*", "packages/*"]` and `@vscode/vsce` in devDependencies; the release workflow passes `VSCE_PAT: ${{ secrets.VSCE_PAT }}` to `vp dlx @varlock/bumpy ci release`; the root `.bumpy/_config.json` is `{ "baseBranch": "main", "changelog": "default", "allowCustomCommands": true, "ignore": ["@mirrordown/markdown-docs"] }`. Note `allowCustomCommands: true` is what lets per-package `bumpy.buildCommand`/`publishCommand` run.
+Root `package.json` devDependencies: add `"@vscode/vsce": "^4.1.0"`.
 
-Conventions: Vite+ for everything, bumpy for versioning, soft-wrapped markdown, no attribution lines.
+**Verify**: `vp install` → exit 0 and `yarn workspaces list` includes `extensions/deoptkit-vscode`; `vp -C packages/deoptkit pack` then `vp -C extensions/deoptkit-vscode pack` → `Build complete` with `dist/extension.cjs` and `dist/server.cjs`; `grep -c 'require("vscode")' extensions/deoptkit-vscode/dist/extension.cjs` ≥ 1 (host-provided, not bundled); `grep -c "vscode-languageclient" extensions/deoptkit-vscode/dist/extension.cjs` → 0 after the first require line (it is bundled: `grep -c "LanguageClient" …` ≥ 1 and no `require("vscode-languageclient` string); `vp check --fix` → clean; `git status --short` shows `extensions/deoptkit-vscode/.vscode/launch.json` as addable.
 
-## Commands you will need
+### Step 3: Headless check of the bundled server
 
-| Purpose                             | Command                                                         | Expected on success |
-| ----------------------------------- | --------------------------------------------------------------- | ------------------- |
-| Install                             | `vp install`                                                    | exit 0              |
-| Checks                              | `vp check --fix`                                                | clean               |
-| Tests                               | `vp test`                                                       | all pass            |
-| Build root package                  | `vp pack`                                                       | `Build complete`    |
-| Package an extension (after Step 3) | `vp exec vsce package --no-dependencies` (in the extension dir) | a `.vsix` file      |
+Run, from the repository root (one line; adapt the path separator for Git Bash):
 
-## Scope
+```
+node -e "const {spawn}=require('node:child_process');const p=spawn(process.execPath,['extensions/deoptkit-vscode/dist/server.cjs','--findings','nope.json']);let out='';p.stdout.on('data',d=>{out+=d;if(out.includes('serverInfo')){console.log(out.split('\r\n\r\n').pop());p.kill();}});const body=JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{capabilities:{}}});p.stdin.write('Content-Length: '+Buffer.byteLength(body)+'\r\n\r\n'+body);setTimeout(()=>{console.error('timeout');p.kill();process.exit(1)},5000)"
+```
 
-**In scope** (Step 1): `docs/VSCODE_EXTENSION.md` (create) and nothing else.
+**Verify**: prints a JSON response containing `"serverInfo":{"name":"deoptkit"`.
 
-**In scope** (Steps 2–5, after approval): whatever the chosen layout requires, enumerated in Step 2; at minimum an extension package directory with `package.json`, `src/extension.ts`, `vite.config.ts`, `.vscodeignore`, `README.md`, and changes to the root `package.json`, `.bumpy/_config.json`, `.github/workflows/release.yml`, and `README.md` (Inline editor diagnostics section).
+### Step 4: Packaging and release pipeline
 
-**Out of scope**:
+- `cd extensions/deoptkit-vscode && vp exec vsce package --no-dependencies` → a `.vsix`; `vp exec vsce ls --no-dependencies` lists `dist/extension.cjs`, `dist/server.cjs`, `package.json`, `README.md`, `LICENSE.md`, `CHANGELOG.md` and nothing under `node_modules` or `src`. Add `**/*.vsix` to the root `.gitignore`.
+- `.bumpy/_config.json`: add
 
-- Decorations, CodeLens, gutter icons, or any rendering beyond what the LSP client provides (BENCHMARKING §8 stage 2 is explicitly "only if the LSP proves demand"; the spike delivers the thin client).
-- Running benchmarks from the extension.
-- Marketplace listing assets beyond a README and an icon placeholder.
+  ```json
+      "deoptkit-vscode": {
+        "buildCommand": "vp pack && vp exec vsce package --no-dependencies",
+        "publishCommand": "vp exec vsce publish --no-dependencies",
+        "skipNpmPublish": true,
+        "releaseTriggeringDevDeps": ["deoptkit"]
+      }
+  ```
 
-## Git workflow
+  under `packages`, so an engine release cascades into an extension release and the extension never ships a stale bundled server.
 
-- Branch: `advisor/009-vscode-extension` from `main`.
-- Suggested commits: `Docs: VSCode extension layout decision memo`, then `VSCode: thin LSP client extension and vsce publishing pipeline`.
-- Bump file: added in Step 4 once the extension package name exists (`"<extension-name>": minor`), plus `"deoptkit": none` if the root package did not change behavior.
-- Do NOT push or open a PR unless the operator instructed it. No attribution lines.
+- `.github/workflows/release.yml`: add `VSCE_PAT: ${{ secrets.VSCE_PAT }}` to the `env` of both `bumpy ci release` steps. The publish job already builds the engine before bumpy runs; add a comment above that step saying the extension's `vp pack` bundles `deoptkit/lsp` from `packages/deoptkit/dist`, which is why the engine is built first.
+- `.github/workflows/ci.yml`: insert `- run: vp -C packages/deoptkit pack` before `vp check` with a comment: the type-aware lint resolves `deoptkit/lsp` through the built `types` export; without `dist/` its types silently become `any` (the same reason mirrordown builds before checking). Also add `- run: vp -C extensions/deoptkit-vscode pack` after it so a broken bundle fails CI.
 
-## Steps
+**Verify**: `vp dlx @varlock/bumpy status` lists `deoptkit-vscode` with the pending minor bump; `vp check` → clean; `vp test` → all pass.
 
-### Step 1: Decision memo, then STOP
+### Step 5: Docs and the smoke test record
 
-Write `docs/VSCODE_EXTENSION.md` with:
+- `packages/deoptkit/README.md`, "Inline editor diagnostics (LSP)": replace the "**VSCode** has no built-in generic LSP client…" paragraph with: install the `deoptkit` extension (marketplace id `saeris.deoptkit-vscode`); it starts `deoptkit lsp` on the workspace's installed deoptkit (or its bundled copy) and shows findings as squiggles and Problems entries; the two settings. Keep the MCP sentence about Claude Code users.
+- Root `README.md` Packages table: add a row for `deoptkit-vscode` linking to `extensions/deoptkit-vscode` with the marketplace id.
+- `docs/VSCODE_EXTENSION.md`, "Smoke test": record what you verified (the vsix contents and the headless `initialize` response) and state explicitly that the in-editor check (squiggles on a file annotated by `.deopt/findings.json`, downgrade to Information after editing) is left to the maintainer, with the command to install the vsix: `code --install-extension extensions/deoptkit-vscode/deoptkit-vscode-0.0.0.vsix`.
 
-- The goal (thin LSP client; squiggles and Problems panel from `findings.json`; settings: `deoptkit.findingsPath`, `deoptkit.serverPath` or "use the workspace's `deoptkit` bin via `npx`").
-- Option A — **Yarn workspace conversion**: root becomes `private`, the npm package moves to `packages/deoptkit`, the extension lives in `extensions/deoptkit-vscode`. Costs: every path in `README.md`, `.bumpy/_config.json`, `vite.config.ts`, `.github/workflows/*.yml`, `tsconfig.json`, and the plans directory moves; `files`/`bin` unchanged inside the moved package; bumpy's `packages` key stays `deoptkit`. Benefits: matches mirrordown exactly, `workspace:*` dependency from the extension on `deoptkit` so the extension can bundle the LSP server and ship self-contained.
-- Option B — **Workspace without moving the root package**: keep `deoptkit` at the root, add `"workspaces": ["extensions/*"]`. Yarn warns that workspace roots should be private; the published root `package.json` would carry the `workspaces` field (harmless for consumers but unusual). Benefits: minimal churn. Risks: `npm publish` of a workspace root and bumpy's handling of a non-private root must be verified in a dry run.
-- Option C — **Separate repository** (`Saeris/deoptkit-vscode`): no changes here; the extension depends on the published `deoptkit` npm package and spawns `deoptkit lsp` via `npx` or a configured path. Costs: two release trains, version skew risk; benefits: zero impact on this package's layout.
-- Recommendation: state one, with reasons (the audit leans to Option A because it matches the maintainer's conventions and lets the extension bundle the server; say so, and say what would change the recommendation).
-- Open questions for the maintainer (publisher id `saeris`, extension name, minimum VSCode version, whether to bundle the server or require a workspace install).
-
-**Verify**: the file exists, is soft-wrapped, and lists the three options and a recommendation. Then **STOP** and report; wait for the maintainer to record the choice at the top of the memo.
-
-### Step 2: Apply the chosen layout
-
-> **Superseded on 2026-11-03**: the maintainer chose Option A and plan 010 performs this step. Confirm plan 010 is DONE in `plans/README.md` (the package then lives at `packages/deoptkit`) and continue with Step 3; read every `src/`, `package.json`, and `vite.config.ts` path in the steps below as relative to `packages/deoptkit/` for the engine and to `extensions/deoptkit-vscode/` for the extension.
-
-Execute only the chosen option's mechanical changes. For Option A, move the package with `git mv` (`src`, `fixtures`, `dist` ignored, `vite.config.ts`, `tsconfig.json`, `package.json`, `THIRD_PARTY_NOTICES.md`, `LICENSE.md` as appropriate) into `packages/deoptkit`, create a private root `package.json` with `workspaces`, `packageManager`, and shared devDependencies, keep `.bumpy/` and `.github/` at the root, and update every path reference (grep for `src/`, `fixtures/`, `vite.config.ts`, `dist/` in `.github`, `.bumpy`, `README.md`, `docs/`). For Option B, add `workspaces` only. For Option C, STOP after Step 1 and report that the work continues in another repository.
-
-**Verify**: `vp install` → exit 0; `vp check` → clean; `vp test` → all pass; `vp pack` (in the package dir for Option A) → `Build complete`.
-
-### Step 3: Extension skeleton
-
-Create `extensions/deoptkit-vscode/`:
-
-- `package.json`: `name: "deoptkit-vscode"`, `displayName: "deoptkit"`, `publisher: "saeris"`, `main: "./dist/extension.cjs"`, `engines.vscode` matching the installed `@types/vscode`, `activationEvents: ["onLanguage:javascript", "onLanguage:typescript", "workspaceContains:.deopt/findings.json"]`, `contributes.configuration` with `deoptkit.findingsPath` (default `.deopt/findings.json`) and `deoptkit.serverCommand` (default `["npx", "deoptkit", "lsp"]`), `devDependencies` `@types/vscode`, `vscode-languageclient`, and (Option A) `deoptkit: "workspace:*"`; the `bumpy` block copied from mirrordown; `private` absent.
-- `src/extension.ts`: `activate` creates a `LanguageClient` with `TransportKind.stdio` running the configured command plus `--findings <absolute path>` resolved against the first workspace folder, `documentSelector` for javascript/typescript, and starts it; `deactivate` stops it.
-- `vite.config.ts`: `pack: { entry: "src/extension.ts", format: "cjs", dts: false, deps: { neverBundle: ["vscode"], alwaysBundle: ["vscode-languageclient"] } }` plus the `run.tasks.build` from mirrordown. `vscode` must stay external (the host provides it).
-- `.vscodeignore` as in mirrordown; `README.md` with install and settings; `CHANGELOG.md` empty (bumpy writes it).
-
-**Verify**: in the extension dir, `vp pack` → `Build complete` with `dist/extension.cjs`; `vp exec vsce package --no-dependencies` → produces `deoptkit-vscode-0.0.0.vsix` (or current version); `grep -c "require(\"vscode\")" dist/extension.cjs` → at least 1 (vscode external).
-
-### Step 4: Publishing pipeline
-
-- Root `.bumpy/_config.json`: add `"allowCustomCommands": true` and a `packages["deoptkit-vscode"]` entry only if bumpy needs it (mirrordown relies on the per-package `bumpy` block; check `node_modules/@varlock/bumpy/config-schema.json`).
-- `.github/workflows/release.yml`: pass `VSCE_PAT: ${{ secrets.VSCE_PAT }}` to both `bumpy ci release` steps; for Option A, build the package before the extension so bundling has `dist/` (mirror mirrordown's pre-build step, simplified).
-- Add `@vscode/vsce` to the root devDependencies.
-- `README.md` Inline editor diagnostics section: replace the "no generic LSP client" paragraph with install instructions for the extension (marketplace id `saeris.deoptkit-vscode`).
-- Bump files: `.bumpy/009-vscode-extension.md` with `"deoptkit-vscode": minor` (and `"deoptkit": none` or `patch` if paths moved).
-
-**Verify**: `vp dlx @varlock/bumpy ci plan` (read-only) lists the extension with a pending bump; `vp check` → clean.
-
-### Step 5: Manual smoke test (report, do not automate)
-
-Install the `.vsix` into VSCode (`code --install-extension <file>`), open a project where plan 005's preset or `deoptkit ci` wrote `.deopt/findings.json`, open an annotated file, and confirm squiggles and Problems entries; edit the file and confirm the diagnostic downgrades to Information with the re-run hint. Record the outcome in `docs/VSCODE_EXTENSION.md` under "Smoke test".
+**Verify**: `grep -n "no built-in generic LSP client" packages/deoptkit/README.md` prints nothing; `vp check --fix` → clean. Commit as `VSCode: thin LSP client extension and vsce publishing pipeline`.
 
 ## Test plan
 
-- No automated extension tests in this spike (VSCode's test harness needs a display; defer). The LSP server itself is covered by `src/lsp/__tests__/lsp.spec.ts`.
-- Pipeline verification via `bumpy ci plan` and `vsce package`.
+- No VSCode test harness (needs a display). Coverage comes from: the engine's `src/lsp/__tests__/lsp.spec.ts` (server protocol), `packageExports.spec.ts` (the new export ships), the headless `initialize` check of the bundled server (Step 3), and CI building the extension on every push (Step 4).
 
 ## Done criteria
 
-- [ ] `docs/VSCODE_EXTENSION.md` exists with options, recommendation, the maintainer's recorded choice, and the smoke-test outcome
-- [ ] (Options A/B) `vp install`, `vp check`, `vp test` all exit 0 at the root
-- [ ] `vsce package --no-dependencies` produces a `.vsix` in the extension dir
-- [ ] `release.yml` passes `VSCE_PAT`; `.bumpy/_config.json` allows custom commands
-- [ ] `README.md` no longer says VSCode has no path to diagnostics
-- [ ] `plans/README.md` status row updated
+- [ ] `packages/deoptkit` exports `./lsp` and `dist/lsp.mjs` builds
+- [ ] `extensions/deoptkit-vscode` builds, packages to a `.vsix` without `node_modules`, and its bundled server answers `initialize` headlessly
+- [ ] `.bumpy/_config.json` has the `deoptkit-vscode` entry with `releaseTriggeringDevDeps: ["deoptkit"]`; `bumpy status` lists the extension
+- [ ] `release.yml` passes `VSCE_PAT`; `ci.yml` builds the engine before `vp check` and builds the extension
+- [ ] `vp check` and `vp test` exit 0 at the root
+- [ ] `packages/deoptkit/README.md` no longer says VSCode has no path to diagnostics; `docs/VSCODE_EXTENSION.md` has the smoke-test record
+- [ ] No files outside the in-scope list are modified
+- [ ] `plans/README.md` status row updated (skip if your reviewer maintains the index)
 
 ## STOP conditions
 
-- After Step 1, always (await the maintainer's choice).
-- Option A: any `git mv` would touch `plans/` or `.claude/` (leave those at the root; report if a tool insists).
-- Option B: `yarn npm publish --dry-run` or `bumpy ci plan` refuses a non-private workspace root; report the message.
-- `vsce` rejects the manifest (missing `repository`, `engines`, or a `publisher` mismatch); report the exact error.
-- `vscode-languageclient`'s current major requires a VSCode engine newer than the `@types/vscode` available; report both versions.
+- `vsce` rejects the manifest (missing `repository`, `engines`, `publisher` mismatch); report the exact error.
+- tsdown cannot bundle `deoptkit/lsp` into CJS (for example an error about the JSON import attribute or top-level await); report the error rather than switching the server to spawn `deoptkit`'s bin.
+- The headless `initialize` check times out.
+- `vp check` type errors inside `extensions/` that need changes to `packages/deoptkit/src/**`.
 
 ## Maintenance notes
 
-- Keep the extension free of analysis logic; everything it shows comes from `findings.json` through the LSP, so engine changes never require an extension release.
-- If the server is bundled into the extension (Option A), the extension's version must bump whenever `deoptkit` does; bumpy's dependency tracking handles `workspace:*` consumers, verify in the first real release.
-- The `activationEvents` include `workspaceContains:.deopt/findings.json`; if users configure a different `findingsPath`, activation still happens on JS/TS files.
+- The extension's only engine contact is `deoptkit/lsp`; keep the server free of VSCode knowledge and the client free of analysis knowledge.
+- The bundled server is only a fallback; projects with findings normally have `deoptkit` installed, and the client prefers that copy to avoid interchange skew.
+- Multi-root workspaces: one client for the first folder (memo decision 6). Adding one client per folder is a small change in `activate` if demand appears.
+- `VSCE_PAT` must exist as a repository secret before the first extension release; without it bumpy's `publishCommand` fails for the extension only.
