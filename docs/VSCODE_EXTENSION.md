@@ -4,6 +4,18 @@ Spike memo for [plan 009](../plans/009-vscode-extension-spike.md). Steps 2–5 o
 
 ## Decision
 
+**Option A, the Yarn workspace conversion**, recorded by the maintainer on 2026-11-03. The conversion is its own plan, [plan 010](../plans/010-yarn-workspace-conversion.md), which supersedes Step 2 of plan 009; the extension skeleton, pipeline, and smoke test (plan 009 Steps 3–5) run once plan 010 has landed.
+
+Answers to the open questions below, chosen as defaults the maintainer can overrule:
+
+1. Publisher id `saeris`.
+2. Package name `deoptkit-vscode`, display name `deoptkit`, marketplace id `saeris.deoptkit-vscode`.
+3. `engines.vscode: ^1.125.0` with `@types/vscode` 1.125, as in mirrordown. `vscode-languageclient` 11 needs only `^1.91.0`.
+4. Both. The client starts the server as a `module` over stdio, so `vscode-languageclient` spawns the extension host's own Node and nothing depends on the user's `PATH`. It prefers the workspace's installed package when `<folder>/node_modules/deoptkit/dist/main.mjs` exists (no producer/server skew), otherwise it runs the server bundled in the extension (self-contained install). `deoptkit.serverCommand`, when set, replaces both. Bundling needs a `deoptkit/lsp` export, added in plan 009 Step 3.
+5. No run-bench command in the thin client.
+6. First workspace folder only, documented as a limitation; one client per folder can follow if asked for.
+7. Commit `extensions/*/.vscode/launch.json` through a `.gitignore` exception so F5 debugging works from a fresh clone.
+
 ## Goal
 
 A thin VSCode language client for `deoptkit lsp`, so VSCode users get the same squiggles and Problems panel entries that Neovim, Helix, and Zed users already get from a one-line config (README, "Inline editor diagnostics (LSP)"). The extension holds no analysis logic: the engine writes `.deopt/findings.json` (through `deoptkit ci` or the `deoptkit/vitest` preset), the server maps it to diagnostics, and the extension only starts the server and lets `vscode-languageclient` render what it publishes. This is the "30-line shell" of [BENCHMARKING.md §8](./BENCHMARKING.md) item 1, not the decorations-and-CodeLens "extension proper" of item 2, which stays gated on demand.

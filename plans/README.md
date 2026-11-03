@@ -6,17 +6,18 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 
 ## Execution order & status
 
-| Plan | Title                                                                  | Priority | Effort | Depends on    | Status                                                                                       |
-| ---- | ---------------------------------------------------------------------- | -------- | ------ | ------------- | -------------------------------------------------------------------------------------------- |
-| 001  | Parse inlined deopt locations and attribute deopt sites to functions   | P1       | S      | —             | DONE                                                                                         |
-| 002  | Remove `development` export conditions that point at unshipped `src/`  | P1       | S      | —             | DONE                                                                                         |
-| 003  | Normalize script URLs by stripping query strings and fragments         | P1       | S      | —             | DONE                                                                                         |
-| 004  | End-to-end test for the `deoptkit/vitest` bench preset                 | P1       | M      | 002           | DONE                                                                                         |
-| 005  | Make the vitest preset write `findings.json` so the editor loop closes | P1       | M      | 004           | DONE                                                                                         |
-| 006  | Add an opt-in `nativeEsm` mode to the vitest preset                    | P2       | S      | 002, 003, 004 | DONE                                                                                         |
-| 007  | Window profile ticks and consolidate the tool layer                    | P2       | M      | —             | DONE                                                                                         |
-| 008  | Add MCP tool titles, annotations, and structured content               | P2       | M      | —             | DONE                                                                                         |
-| 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline | P2       | L      | 005           | BLOCKED (step 1 done; awaiting the maintainer's layout decision in docs/VSCODE_EXTENSION.md) |
+| Plan | Title                                                                             | Priority | Effort | Depends on    | Status                                                                                                     |
+| ---- | --------------------------------------------------------------------------------- | -------- | ------ | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| 001  | Parse inlined deopt locations and attribute deopt sites to functions              | P1       | S      | —             | DONE                                                                                                       |
+| 002  | Remove `development` export conditions that point at unshipped `src/`             | P1       | S      | —             | DONE                                                                                                       |
+| 003  | Normalize script URLs by stripping query strings and fragments                    | P1       | S      | —             | DONE                                                                                                       |
+| 004  | End-to-end test for the `deoptkit/vitest` bench preset                            | P1       | M      | 002           | DONE                                                                                                       |
+| 005  | Make the vitest preset write `findings.json` so the editor loop closes            | P1       | M      | 004           | DONE                                                                                                       |
+| 006  | Add an opt-in `nativeEsm` mode to the vitest preset                               | P2       | S      | 002, 003, 004 | DONE                                                                                                       |
+| 007  | Window profile ticks and consolidate the tool layer                               | P2       | M      | —             | DONE                                                                                                       |
+| 008  | Add MCP tool titles, annotations, and structured content                          | P2       | M      | —             | DONE                                                                                                       |
+| 009  | VSCode extension spike: layout decision, skeleton, publishing pipeline            | P2       | L      | 005, 010      | TODO (steps 3–5; Option A recorded in docs/VSCODE_EXTENSION.md on 2026-11-03; Step 2 is superseded by 010) |
+| 010  | Convert the repository to a Yarn workspace with `deoptkit` at `packages/deoptkit` | P1       | M      | —             | IN PROGRESS                                                                                                |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -28,6 +29,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 009 requires 005 so the extension has a live `findings.json` producer to demonstrate against. It also carries a STOP condition for a repository-layout decision the maintainer must make.
 - 001 and 003 both touch `src/parser/parseLog.ts`; run them sequentially (001 first) to avoid merge conflicts, or hand both to one executor.
 - 007 touches `src/parser/parseLog.ts` as well (tick samples); schedule it after 001 and 003.
+- 009 requires 010: the maintainer chose the workspace conversion (Option A) on 2026-11-03, and the extension package lives under `extensions/*` of that workspace.
+- Plans 001–009 were written against the pre-conversion layout; once 010 lands, every `src/...` and `fixtures/...` path they cite lives under `packages/deoptkit/`.
 
 ## Audit findings (vetted, ordered by leverage)
 

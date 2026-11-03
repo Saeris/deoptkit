@@ -9,7 +9,7 @@
 - **Priority**: P2
 - **Effort**: L (coarse; the spike itself is M, the full extension depends on the layout decision)
 - **Risk**: MED
-- **Depends on**: plans/005-vitest-preset-writes-findings-json.md
+- **Depends on**: plans/005-vitest-preset-writes-findings-json.md, plans/010-yarn-workspace-conversion.md (the maintainer chose Option A on 2026-11-03; plan 010 performs the layout change Step 2 describes)
 - **Category**: direction
 - **Planned at**: commit `b733901`, 2026-11-03
 
@@ -151,6 +151,8 @@ Write `docs/VSCODE_EXTENSION.md` with:
 **Verify**: the file exists, is soft-wrapped, and lists the three options and a recommendation. Then **STOP** and report; wait for the maintainer to record the choice at the top of the memo.
 
 ### Step 2: Apply the chosen layout
+
+> **Superseded on 2026-11-03**: the maintainer chose Option A and plan 010 performs this step. Confirm plan 010 is DONE in `plans/README.md` (the package then lives at `packages/deoptkit`) and continue with Step 3; read every `src/`, `package.json`, and `vite.config.ts` path in the steps below as relative to `packages/deoptkit/` for the engine and to `extensions/deoptkit-vscode/` for the extension.
 
 Execute only the chosen option's mechanical changes. For Option A, move the package with `git mv` (`src`, `fixtures`, `dist` ignored, `vite.config.ts`, `tsconfig.json`, `package.json`, `THIRD_PARTY_NOTICES.md`, `LICENSE.md` as appropriate) into `packages/deoptkit`, create a private root `package.json` with `workspaces`, `packageManager`, and shared devDependencies, keep `.bumpy/` and `.github/` at the root, and update every path reference (grep for `src/`, `fixtures/`, `vite.config.ts`, `dist/` in `.github`, `.bumpy`, `README.md`, `docs/`). For Option B, add `workspaces` only. For Option C, STOP after Step 1 and report that the work continues in another repository.
 
