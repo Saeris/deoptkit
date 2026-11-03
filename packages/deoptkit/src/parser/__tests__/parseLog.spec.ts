@@ -103,11 +103,33 @@ describe("parseLog on a real generated V8 log", () => {
     expect(known?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("captures map-details text for later property inspection", () => {
-    const withDetails = [...model.maps.entries.values()].filter(
-      ({ details }) => details?.includes("[Map]") === true
+  // get_map answers "which properties, in what order" from these parsed shapes; a
+  // shape literal whose `x` lost its representation would leave nothing to compare.
+  it("parses map-details into structured shapes", () => {
+    const entries = [...model.maps.entries.values()];
+    expect(
+      entries.filter(({ details }) => details?.type === "JS_OBJECT_TYPE").length
+    ).toBeGreaterThan(100);
+    const literal = entries.find(
+      ({ details }) =>
+        details?.constructorName === "Object" &&
+        details.properties.some(({ name }) => name === "x")
     );
-    expect(withDetails.length).toBeGreaterThan(100);
+    const x = literal?.details?.properties.find(({ name }) => name === "x");
+    expect(x?.representation).toBeDefined();
+    expect(literal?.details?.unparsedLines).toBe(0);
+    // A non-zero count means V8 changed the block format and the shape data is
+    // silently incomplete.
+    expect(
+      entries.reduce(
+        (sum, { details }) => sum + (details?.unparsedLines ?? 0),
+        0
+      )
+    ).toBe(0);
+    // Transition events carry the map they produced, so findings can name it.
+    expect(model.maps.transitionSites[0]?.events[0]?.mapAddress).toMatch(
+      /^0x/u
+    );
   });
 
   // The workload spends ~1s inside its hot loop, so the profiler must attribute

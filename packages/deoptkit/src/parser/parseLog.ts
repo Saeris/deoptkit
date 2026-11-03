@@ -17,6 +17,7 @@ import type {
 import { icStateRank, parseIcState } from "../model/logModel";
 import { CodeMap } from "./codeMap";
 import { readLog } from "./logReader";
+import { parseMapDetails } from "./mapDetails";
 import { decodeSourceInfo, positionAt, ScriptPositions } from "./sourceInfo";
 
 /** IC event commands as emitted by `--log-ic` on modern V8. */
@@ -618,13 +619,17 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       site.count += 1;
       site.events.push({
         time: timestamp,
-        propertyName: name === "" ? undefined : name
+        propertyName: name === "" ? undefined : name,
+        mapAddress: to ?? ""
       });
       if (name && !site.propertyNames.includes(name))
         site.propertyNames.push(name);
     },
     "map-details": ([time, address, details]): void => {
-      upsertMapEntry(address ?? "", Number(time)).details = details;
+      const entry = upsertMapEntry(address ?? "", Number(time));
+      entry.details = parseMapDetails(details ?? "");
+      // Maps created before logging began have no `map` event; the back pointer still chains them.
+      entry.parent ??= entry.details.backPointer;
     },
     tick: ([
       pc,

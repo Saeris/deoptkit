@@ -301,6 +301,41 @@ describe("deoptkit server", () => {
       expect(idSite.stateHistory.endsWith("megamorphic")).toBe(true);
       expect(idSite.mapAddresses.length).toBeGreaterThanOrEqual(1);
 
+      // This is the drill-down the churn explanation points to: the shape the polluted
+      // read saw, in property order, next to the shapes its parent diverged into.
+      const getMap = async (address: string | undefined): Promise<unknown> => {
+        const result = await client.callTool({
+          name: "get_map",
+          arguments: { sessionId: String(payload.sessionId), address }
+        });
+        expect(result.isError ?? false).toBe(false);
+        return textPayload(result);
+      };
+      const shape = (await getMap(idSite.mapAddresses[0])) as {
+        details: { type: string };
+        properties: string[];
+        siblings: unknown[];
+        transitionChain: { address: string; propertyName?: string }[];
+      };
+      expect(shape.details.type).toBe("JS_OBJECT_TYPE");
+      expect(shape.properties).toContain("id");
+      expect(Array.isArray(shape.siblings)).toBe(true);
+      // The churned records diverge from the `{ id }` map, so the shape that added the
+      // next property after `id` has the other branches as siblings. The most recent map
+      // itself can be the only child of its parent, so it is not the one asserted on.
+      const chain = shape.transitionChain;
+      const branch = chain[chain.findIndex((m) => m.propertyName === "id") - 1];
+      if (branch === undefined)
+        throw new Error("expected a shape added after `id` in the chain");
+      const branched = (await getMap(branch.address)) as {
+        siblingCount: number;
+        siblings: { properties?: string[] }[];
+      };
+      expect(branched.siblingCount).toBeGreaterThanOrEqual(1);
+      for (const sibling of branched.siblings) {
+        expect(sibling.properties?.[0]).toBe("id");
+      }
+
       // Closing the loop in one call saves a round trip and the bookkeeping of two
       // session ids on every iteration.
       const fixed = await client.callTool({

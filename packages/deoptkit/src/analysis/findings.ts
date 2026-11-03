@@ -100,6 +100,25 @@ const BASE_WEIGHT: Record<FindingKind, number> = {
 const KEYED_IC_DISCOUNT = 0.45;
 
 /**
+ * Keep the first `limit` distinct map addresses as evidence: the addresses let an agent
+ * call get_map without a list_ics round trip. V8 logs a store IC's first transition
+ * against the null map, which get_map cannot resolve.
+ */
+const addExampleMap = (
+  maps: string[],
+  address: string,
+  limit: number
+): void => {
+  if (
+    maps.length < limit &&
+    address !== "" &&
+    address !== "0x000000000000" &&
+    !maps.includes(address)
+  )
+    maps.push(address);
+};
+
+/**
  * severity = base x (1 + log10(1 + occurrences)) x (1 + 4 x heat), clamped to 1-100,
  * where heat is the enclosing function's share of all self ticks. A megamorphic site
  * with even modest hits in a hot function outranks anything cold — matching how much
@@ -188,6 +207,9 @@ export const computeFindings = (model: LogModel): Finding[] => {
       .slice(0, 3)
       .map((exampleKey) => `"${exampleKey}"`)
       .join(", ");
+    const exampleMaps: string[] = [];
+    for (const { mapAddress } of site.transitions)
+      addExampleMap(exampleMaps, mapAddress, 3);
     if (site.worstState === "megamorphic" || site.worstState === "generic") {
       findings.push(
         finding(
@@ -204,14 +226,16 @@ export const computeFindings = (model: LogModel): Finding[] => {
                 distinctKeys: site.distinctKeys,
                 worstState: site.worstState,
                 transitions: hits,
-                keyedAccess: true
+                keyedAccess: true,
+                exampleMaps
               }
             : {
                 icType: site.type,
                 key: site.key,
                 worstState: site.worstState,
                 transitions: hits,
-                keyedAccess: false
+                keyedAccess: false,
+                exampleMaps
               }
         )
       );
@@ -230,13 +254,15 @@ export const computeFindings = (model: LogModel): Finding[] => {
                 keys: site.keys.slice(0, 8),
                 distinctKeys: site.distinctKeys,
                 worstState: site.worstState,
-                transitions: hits
+                transitions: hits,
+                exampleMaps
               }
             : {
                 icType: site.type,
                 key: site.key,
                 worstState: site.worstState,
-                transitions: hits
+                transitions: hits,
+                exampleMaps
               }
         )
       );
@@ -347,6 +373,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
     count: number;
     propertyNames: string[];
     transitionsPerName: Map<string, number>;
+    exampleMaps: string[];
   }
   const churnGroups = new Map<string, ChurnGroup>();
   for (const site of model.maps.transitionSites) {
@@ -360,7 +387,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
         anchor: { line: site.line, column: site.column, count: site.count },
         count: 0,
         propertyNames: [],
-        transitionsPerName: new Map()
+        transitionsPerName: new Map(),
+        exampleMaps: []
       };
       churnGroups.set(key, group);
     }
@@ -372,7 +400,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
         count: site.count
       };
     }
-    for (const { propertyName } of site.events) {
+    for (const { propertyName, mapAddress } of site.events) {
+      addExampleMap(group.exampleMaps, mapAddress, 5);
       if (propertyName === undefined) continue;
       group.transitionsPerName.set(
         propertyName,
@@ -419,7 +448,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
         {
           transitionCount: group.count,
           propertyNames: group.propertyNames,
-          maxTransitionsPerProperty: maxPerName
+          maxTransitionsPerProperty: maxPerName,
+          exampleMaps: group.exampleMaps
         }
       )
     );

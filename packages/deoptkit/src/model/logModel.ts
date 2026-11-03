@@ -1,3 +1,4 @@
+import type { MapDetails } from "../parser/mapDetails";
 import type { SourceInfo } from "../parser/sourceInfo";
 
 /** IC states in escalation order. V8 logs these as single characters (see `parseIcState`). */
@@ -119,8 +120,8 @@ export interface CodeEntry {
 export interface MapEntry {
   address: string;
   createdAt: number;
-  /** Raw `map-details` text block, when logged. Parsed lazily by the map tools. */
-  details: string | undefined;
+  /** Parsed `map-details` block, when logged. */
+  details: MapDetails | undefined;
   /** Address of the map this one transitioned from, when known. */
   parent: string | undefined;
   /** Transition subtype that produced this map (Transition, Normalize, ReplaceDescriptors, ...). */
@@ -132,6 +133,8 @@ export interface MapEntry {
 export interface MapTransitionEvent {
   time: number;
   propertyName: string | undefined;
+  /** The map the transition produced (`to`), for get_map. */
+  mapAddress: string;
 }
 
 /** Aggregated map transitions attributed to one source position — the map-churn signal. */

@@ -6,13 +6,20 @@ import { sessionIdSchema, unknownSessionError } from "./shared";
 /** Cap transition-chain walks; deep chains indicate churn, not useful ancestry. */
 const MAX_CHAIN = 32;
 
+/** Cap sibling listings; `siblingCount` stays exact. */
+const MAX_SIBLINGS = 16;
+
+const propertyNames = (entry: MapEntry): string[] | undefined =>
+  entry.details?.properties.map(({ name }) => name);
+
 export const getMap = defineTool({
   name: "get_map",
   title: "Hidden class details",
   description:
-    "Inspect one V8 object map (hidden class) by address: its raw details, the transition " +
-    "chain that produced it, and the IC sites that observed it. Map addresses appear in " +
-    "list_ics transitions (includeTransitions) and get_findings evidence.",
+    "Inspect one V8 object map (hidden class) by address: its parsed shape (properties in order, " +
+    "representation, flags), the transition chain that produced it, its sibling shapes from the " +
+    "same parent, and the IC sites that observed it. Map addresses appear in list_ics transitions " +
+    "(includeTransitions) and get_findings evidence (exampleMaps).",
   annotations: { readOnlyHint: true, idempotentHint: true },
   schema: v.object({
     sessionId: sessionIdSchema,
@@ -50,6 +57,17 @@ export const getMap = defineTool({
         current.parent === undefined ? undefined : entries.get(current.parent);
     }
 
+    // Siblings from one parent are the shapes a constructor diverged into; their property
+    // lists show which property was added in which order.
+    const siblings =
+      entry.parent === undefined
+        ? []
+        : [...entries.values()].filter(
+            (candidate) =>
+              candidate.parent === entry.parent &&
+              candidate.address !== entry.address
+          );
+
     const referencedByIcSites = session.model.ics
       .filter((site) =>
         site.transitions.some(({ mapAddress }) => mapAddress === address)
@@ -70,7 +88,14 @@ export const getMap = defineTool({
       subtype: entry.subtype,
       propertyName: entry.propertyName,
       parent: entry.parent,
+      properties: propertyNames(entry),
       transitionChain: chain,
+      siblings: siblings.slice(0, MAX_SIBLINGS).map((sibling) => ({
+        address: sibling.address,
+        propertyName: sibling.propertyName,
+        properties: propertyNames(sibling)
+      })),
+      siblingCount: siblings.length,
       referencedByIcSites,
       details: entry.details
     });
