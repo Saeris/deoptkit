@@ -59,7 +59,7 @@ const inRange = (time: number, { fromTime, toTime }: ResolvedWindow): boolean =>
  * `${functionName}|${file}|${line}|${column}`. Splits from the right so any extra
  * leading segments stay part of the name.
  */
-const rowFromKey = (key: string): FunctionTicks => {
+export const rowFromKey = (key: string): FunctionTicks => {
   const segments = key.split("|");
   const column = segments.pop();
   const line = segments.pop();

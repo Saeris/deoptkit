@@ -19,6 +19,7 @@ import { compareSessionsTool } from "./tools/compareSessions";
 import { getFindings } from "./tools/getFindings";
 import { getFunction } from "./tools/getFunction";
 import { getMap } from "./tools/getMap";
+import { getProfile } from "./tools/getProfile";
 import { listDeopts } from "./tools/listDeopts";
 import { listFunctions } from "./tools/listFunctions";
 import { listIcs } from "./tools/listIcs";
@@ -37,6 +38,7 @@ const tools: RegisteredTool[] = [
   listIcs,
   listDeopts,
   listFunctions,
+  getProfile,
   getMap,
   getFunction,
   compareSessionsTool
@@ -79,7 +81,8 @@ const SERVER_INSTRUCTIONS = [
   "   is in `introduced`.",
   "",
   "Drill-down: get_function (annotated source + its ICs/deopts/ticks), get_map (a shape's transition chain),",
-  "list_ics / list_deopts / list_functions. Use load_log to analyze an existing v8.log, or load_manifest to",
+  "list_ics / list_deopts / list_functions, and get_profile for the call tree (who calls the hot function,",
+  "top-down or bottom-up). Use load_log to analyze an existing v8.log, or load_manifest to",
   "load every log from a `deoptkit/vitest` bench run, then get_findings { sessionIds } for one ranked list",
   "across workers. Windowing: pass fromMark/toMark (from deoptkit/harness",
   "or benchObserved markers) to scope findings to one benchmark case.",

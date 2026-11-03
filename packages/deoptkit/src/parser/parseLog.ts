@@ -648,9 +648,12 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       // Total ticks count each function once per sample, however often it recurs.
       // Keyed by function key; insertion order keeps the stack innermost first.
       const onStack = new Map<string, FunctionTicks>();
+      const frameKeys: string[] = [];
       const pushFrames = (frames: Frame[]): void => {
-        for (const frame of frames)
+        for (const frame of frames) {
           onStack.set(functionKey(frame), tickRowFor(frame));
+          frameKeys.push(functionKey(frame));
+        }
       };
       pushFrames(top);
       for (const field of stack) {
@@ -664,7 +667,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
         time: Number(time),
         vmState: state,
         self: self ? functionKey(self) : undefined,
-        onStack: [...onStack.keys()]
+        onStack: [...onStack.keys()],
+        frames: frameKeys
       });
     },
     "code-move": ([from, to]): void => {

@@ -49,6 +49,7 @@ describe("deoptkit server", () => {
         "get_findings",
         "get_function",
         "get_map",
+        "get_profile",
         "list_deopts",
         "list_functions",
         "list_ics",

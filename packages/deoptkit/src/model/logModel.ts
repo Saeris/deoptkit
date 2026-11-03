@@ -182,6 +182,8 @@ export interface TickSample {
   self: string | undefined;
   /** Distinct function keys anywhere on the stack (including `self`), innermost first. */
   onStack: string[];
+  /** Every resolved frame innermost first, repeats included (inlined callees expand to their own frames); the material for call trees. */
+  frames: string[];
 }
 
 export interface ProfileModel {

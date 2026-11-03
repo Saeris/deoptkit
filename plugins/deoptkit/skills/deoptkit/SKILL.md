@@ -19,7 +19,7 @@ Use the `deopt` MCP server (the `deoptkit` package) to find and fix structural V
 3. Edit the source at the finding's `original` position when present (that is the `.ts`/`.js` you wrote), otherwise at its file and line. Prefer the smallest change that normalizes object shapes or stabilizes types.
 4. Call `profile_run` again, then `compare_sessions` with `{ baseSessionId, headSessionId }` to confirm the finding is in `resolved` and nothing meaningful is in `introduced`. If findings remain above severity 30, repeat from step 2.
 
-When a finding needs more context, drill down: `get_function` (annotated source plus its ICs, deopts, and ticks), `get_map` (a shape's transition chain and the call sites it polluted), and `list_ics`, `list_deopts`, `list_functions`. To analyze an existing `v8.log`, use `load_log`; to load every log from a `deoptkit/vitest` bench run, use `load_manifest`. `list_sessions` shows what is already loaded. To scope findings to one benchmark case, pass `fromMark` and `toMark` (markers from `deoptkit/harness` or `benchObserved`).
+When a finding needs more context, drill down: `get_function` (annotated source plus its ICs, deopts, and ticks), `get_map` (a shape's transition chain and the call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, and `get_profile` (the call tree: who calls the hot function, top-down or bottom-up). To analyze an existing `v8.log`, use `load_log`; to load every log from a `deoptkit/vitest` bench run, use `load_manifest`. `list_sessions` shows what is already loaded. To scope findings to one benchmark case, pass `fromMark` and `toMark` (markers from `deoptkit/harness` or `benchObserved`).
 
 ## Token discipline
 
