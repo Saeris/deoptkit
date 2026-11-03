@@ -37,6 +37,19 @@ const MAX_SITE_KEYS = 32;
 /** Trailing `url:line:column` in a code entry name, e.g. `getX file:///a/b.js:6:14`. */
 const SOURCE_REF_RE = /^(?<file>.+):(?<line>\d+):(?<column>\d+)$/u;
 
+/**
+ * V8 prints private names and symbols as `symbol("#count" hash 1cbf5b91)` (or
+ * `symbol(hash 49c8685)` without a description); the hash is per process, so it
+ * must not reach IC keys, property names or finding identities. The replacement
+ * matches the `Symbol(description)` form that map-details parsing produces.
+ */
+const SYMBOL_PRINT_RE = /^symbol\((?:"(?<description>.*)" )?hash [0-9a-f]+\)$/u;
+
+const normalizeV8Name = (name: string): string => {
+  const match = SYMBOL_PRINT_RE.exec(name);
+  return match ? `Symbol(${match.groups?.["description"] ?? ""})` : name;
+};
+
 /** V8's code-creation marker → tier. An empty marker is interpreted code whose optimization V8 disabled. */
 const tierOf = (marker: string | undefined): Tier => {
   const core = (marker ?? "").replace(/^o/u, "").replace(/'$/u, "");
@@ -176,10 +189,12 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   const deoptSites = new Map<string, DeoptSite>();
   let mapsCreated = 0;
   const mapEntries = new Map<string, MapEntry>();
-  const mapEventCounts: Record<string, number> = {};
+  // Counted in Maps: which keys appear depends on what the log happened to contain, so
+  // keyed stores on a plain object are mono- or megamorphic from run to run.
+  const mapEventCounts = new Map<string, number>();
   const transitionSites = new Map<string, MapTransitionSite>();
   let tickCount = 0;
-  const vmStates: Record<string, number> = {};
+  const vmStates = new Map<string, number>();
   const functionTicks = new Map<string, FunctionTicks>();
   const samples: TickSample[] = [];
   const scripts = new Map<string, string>();
@@ -273,6 +288,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
   ): {
     file: string | undefined;
     functionName: string | undefined;
+    functionLine: number | undefined;
+    functionColumn: number | undefined;
     line: number;
     column: number;
   } => {
@@ -282,6 +299,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       return {
         file: frame.file,
         functionName: frame.functionName,
+        functionLine: frame.line,
+        functionColumn: frame.column,
         line: frame.at.line,
         column: frame.at.column
       };
@@ -289,6 +308,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     return {
       file: resolved?.entry.file,
       functionName: resolved?.entry.functionName,
+      functionLine: resolved?.entry.line,
+      functionColumn: resolved?.entry.column,
       line: Number(line),
       column: Number(column)
     };
@@ -372,9 +393,10 @@ export const parseLog = async (path: string): Promise<LogModel> => {
 
   const handleIc =
     (type: string) =>
-    ([pc, time, line, column, oldState, newState, mapAddress, key]: Array<
+    ([pc, time, line, column, oldState, newState, mapAddress, rawKey]: Array<
       string | undefined
     >): void => {
+      const key = rawKey === undefined ? undefined : normalizeV8Name(rawKey);
       const parsedOld = parseIcState(oldState ?? "");
       const parsedNew = parseIcState(newState ?? "");
       if (!parsedOld || !parsedNew)
@@ -456,11 +478,17 @@ export const parseLog = async (path: string): Promise<LogModel> => {
         });
         return;
       }
+      // Every field is declared here, in this order, so all entries share one hidden
+      // class; assigning sfi, marker and source later only for JS code gave the code
+      // map's lookups, the parser's hottest loop, three shapes to dispatch on.
       const entry: CodeEntry = {
         start: BigInt(start ?? "0"),
         size: Number(size),
         kind: kind ?? "unknown",
-        ...splitEntryName(name ?? "")
+        ...splitEntryName(name ?? ""),
+        sfi: undefined,
+        marker: undefined,
+        source: undefined
       };
       codeMap.add(entry);
       if (kind !== "JS") return;
@@ -581,6 +609,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       site.events.push({
         time: timestamp,
         reason: reason ?? "",
+        tier: entry === undefined ? undefined : tierOf(entry.marker),
         ...(inlinedAt.length > 0 ? { inlinedAt } : {})
       });
       if (reason && !site.reasons.includes(reason)) site.reasons.push(reason);
@@ -590,9 +619,10 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       // A create at a seen address means V8 reused it after GC; the fresh entry wins.
       mapEntries.set(address ?? "", freshMapEntry(address ?? "", Number(time)));
     },
-    map: ([subtype, time, from, to, pc, line, column, , name]): void => {
+    map: ([subtype, time, from, to, pc, line, column, , rawName]): void => {
       const kind = subtype ?? "unknown";
-      mapEventCounts[kind] = (mapEventCounts[kind] ?? 0) + 1;
+      const name = rawName === undefined ? undefined : normalizeV8Name(rawName);
+      mapEventCounts.set(kind, (mapEventCounts.get(kind) ?? 0) + 1);
       const timestamp = Number(time);
       const entry = upsertMapEntry(to ?? "", timestamp);
       entry.subtype = kind;
@@ -608,6 +638,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
         site = {
           file: at.file,
           functionName: at.functionName,
+          functionLine: at.functionLine,
+          functionColumn: at.functionColumn,
           line: at.line,
           column: at.column,
           propertyNames: [],
@@ -641,7 +673,7 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     ]): void => {
       tickCount += 1;
       const state = vmStateLabel(vmState);
-      vmStates[state] = (vmStates[state] ?? 0) + 1;
+      vmStates.set(state, (vmStates.get(state) ?? 0) + 1);
 
       let previous = BigInt(pc ?? "0");
       // Inlined code runs under the caller's code address; the innermost frame is the
@@ -696,14 +728,14 @@ export const parseLog = async (path: string): Promise<LogModel> => {
     maps: {
       createdCount: mapsCreated,
       entries: mapEntries,
-      eventCounts: mapEventCounts,
+      eventCounts: Object.fromEntries(mapEventCounts),
       transitionSites: [...transitionSites.values()].sort(
         (a, b) => b.count - a.count
       )
     },
     profile: {
       tickCount,
-      vmStates,
+      vmStates: Object.fromEntries(vmStates),
       functions: [...functionTicks.values()].sort(
         (a, b) => b.selfTicks - a.selfTicks
       ),

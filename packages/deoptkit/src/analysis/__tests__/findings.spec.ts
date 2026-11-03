@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { Finding } from "../findings";
-import type { LogModel } from "../../model/logModel";
+import type { LogModel, Tier } from "../../model/logModel";
 import { generateWorkloadLog } from "../../parser/__tests__/helpers";
 import { parseLog } from "../../parser/parseLog";
 import { findingIdentity } from "../compare";
@@ -123,23 +123,25 @@ describe("computeFindings for keyed IC sites", () => {
 });
 
 describe("computeFindings for insufficient-type-feedback deopts", () => {
-  const deoptSite = (reasons: string[]): LogModel["deopts"][number] => ({
+  const deoptSite = (
+    events: { reason: string; tier?: Tier }[]
+  ): LogModel["deopts"][number] => ({
     file: "file:///app/src/hot.js",
     line: 4,
     column: 12,
     functionName: "add",
     kind: "eager",
-    reasons: [...new Set(reasons)],
-    count: reasons.length,
+    reasons: [...new Set(events.map(({ reason }) => reason))],
+    count: events.length,
     inlinedCount: 0,
     firstTime: 0,
-    lastTime: reasons.length,
-    events: reasons.map((reason, index) => ({ time: index, reason }))
+    lastTime: events.length,
+    events: events.map((event, index) => ({ time: index, ...event }))
   });
+  const findingsFor = (events: { reason: string; tier?: Tier }[]): Finding[] =>
+    computeFindings(modelWith({ ics: [], deopts: [deoptSite(events)] }));
   const kindsFor = (...reasons: string[]): string[] =>
-    computeFindings(modelWith({ ics: [], deopts: [deoptSite(reasons)] })).map(
-      ({ kind }) => kind
-    );
+    findingsFor(reasons.map((reason) => ({ reason }))).map(({ kind }) => kind);
 
   // V8 removed the soft deopt kind and logs feedback bailouts as eager; they are
   // warm-up, not instability, and must not gate CI.
@@ -156,10 +158,89 @@ describe("computeFindings for insufficient-type-feedback deopts", () => {
     expect(kindsFor("wrong map", "wrong map")).toEqual(["deopt-loop"]);
   });
 
+  // One bailout per tier while a function climbs Ignition -> Maglev -> TurboFan is V8
+  // learning, not instability. Counting it as a loop made the same code flip between
+  // eager-deopt and deopt-loop depending on whether a run happened to reach TurboFan,
+  // so a CI baseline could never hold still.
+  it("reports one bailout per tier as an eager deopt with per-tier counts, not a loop", () => {
+    const found = findingsFor([
+      { reason: "wrong map", tier: "maglev" },
+      { reason: "wrong map", tier: "turbofan" }
+    ]);
+    expect(found.map(({ kind }) => kind)).toEqual(["eager-deopt"]);
+    expect(found[0]?.evidence["count"]).toBe(2);
+    expect(found[0]?.evidence["tiers"]).toEqual({ maglev: 1, turbofan: 1 });
+  });
+
+  // The loop signal is V8 re-optimizing with fresh feedback and still bailing out in
+  // the same tier; that has to survive the per-tier rule.
+  it("reports the same tier bailing out twice as a deopt loop", () => {
+    const found = findingsFor([
+      { reason: "wrong map", tier: "turbofan" },
+      { reason: "wrong map", tier: "turbofan" }
+    ]);
+    expect(found.map(({ kind }) => kind)).toEqual(["deopt-loop"]);
+    expect(found[0]?.evidence["tiers"]).toEqual({ turbofan: 2 });
+  });
+
   it("splits a site's real and feedback deopts into separate findings", () => {
     expect(
       kindsFor("wrong map", "Insufficient type feedback for call").sort()
     ).toEqual(["eager-deopt", "soft-deopt"]);
+  });
+});
+
+describe("computeFindings for map churn groups", () => {
+  // One call per anonymous function, all in one file, each adding the same three
+  // properties once.
+  const transitionSite = (
+    functionLine: number
+  ): LogModel["maps"]["transitionSites"][number] => ({
+    file: "file:///app/src/build.js",
+    functionName: "",
+    functionLine,
+    functionColumn: 1,
+    line: functionLine + 1,
+    column: 5,
+    propertyNames: ["a", "b", "c"],
+    count: 3,
+    events: ["a", "b", "c"].map((propertyName, index) => ({
+      time: index,
+      propertyName,
+      mapAddress: `0x${functionLine}${index}`
+    }))
+  });
+  const churnFor = (
+    ...sites: LogModel["maps"]["transitionSites"]
+  ): Finding[] => {
+    const model = modelWith({ ics: [], deopts: [] });
+    return computeFindings({
+      ...model,
+      maps: { ...model.maps, transitionSites: sites }
+    }).filter(({ kind }) => kind === "map-churn");
+  };
+
+  // Anonymous functions (V8 names them "") and module top-level code share the empty
+  // name, so grouping by name alone pooled the object literals of unrelated functions
+  // into one branching "churn" finding that no edit could ever fix. Each of the three
+  // sites below builds its own linear shape; pooled, their identical property names
+  // look like one property added from three parent shapes.
+  it("does not pool the transitions of different anonymous functions", () => {
+    expect(
+      churnFor(transitionSite(10), transitionSite(20), transitionSite(30))
+    ).toEqual([]);
+  });
+
+  // The split must not hide real churn: the same function adding the same property
+  // from three parent shapes is the branching this finding exists to report.
+  it("still reports one finding when a single function branches", () => {
+    const sites = [10, 10, 10].map((line, index) => ({
+      ...transitionSite(line),
+      line: line + index + 1
+    }));
+    const found = churnFor(...sites);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.evidence["maxTransitionsPerProperty"]).toBe(3);
   });
 });
 

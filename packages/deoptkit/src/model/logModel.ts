@@ -72,6 +72,8 @@ export interface SourcePosition {
 export interface DeoptEvent {
   time: number;
   reason: string;
+  /** Optimization tier of the code that bailed out, from the code object's marker; absent when the code object is unknown. */
+  tier?: Tier;
   /** Callers this deopt was inlined into, innermost first; absent when not inlined. */
   inlinedAt?: SourcePosition[];
 }
@@ -106,14 +108,14 @@ export interface CodeEntry {
   line: number | undefined;
   column: number | undefined;
   /** SharedFunctionInfo address from a JS `code-creation`; identical across a function's tiers. */
-  sfi?: string | undefined;
+  sfi: string | undefined;
   /**
    * V8's tier marker from code-creation: `~` interpreted, `^` baseline, `+` Maglev, `*`
    * TurboFan, with an `o` prefix for OSR code and a trailing `'` for context-specialized code.
    */
-  marker?: string | undefined;
+  marker: string | undefined;
   /** Decoded `code-source-info` tables, when the log has them for this code object. */
-  source?: SourceInfo | undefined;
+  source: SourceInfo | undefined;
 }
 
 /** One V8 object map (hidden class) observed in the log. */
@@ -141,6 +143,13 @@ export interface MapTransitionEvent {
 export interface MapTransitionSite {
   file: string | undefined;
   functionName: string | undefined;
+  /**
+   * Start position of the enclosing function (the code object's, or the inlined
+   * function's), so churn can be grouped per function even when the function is
+   * anonymous.
+   */
+  functionLine: number | undefined;
+  functionColumn: number | undefined;
   line: number;
   column: number;
   /** Distinct property names added at this site. */

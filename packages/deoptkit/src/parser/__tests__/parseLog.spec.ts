@@ -587,3 +587,52 @@ describe("parseLog models keyed IC sites by position", () => {
     for (const site of named) expect(site.transitions).toHaveLength(1);
   });
 });
+
+describe("parseLog strips per-process symbol hashes", () => {
+  let fixtureDir: string;
+  let model: LogModel;
+
+  // V8 prints `symbol("#count" hash 1cbf5b91)` for private names, and the hash changes
+  // every process. Left in IC keys and map property names it makes every finding
+  // identity differ between runs, so no baseline can ever match, and it hands an agent
+  // meaningless hex.
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-symbols-"));
+    const path = join(fixtureDir, "symbols.v8.log");
+    await writeFile(
+      path,
+      [
+        "v8-version,14,0,0,0,-node.0,0",
+        "script-source,7,file:///app/s.js,const f = (o) => o.#count;\n",
+        "code-creation,JS,10,1000,0x1000,64,f file:///app/s.js:1:11,0x7001,~",
+        'LoadIC,0x1010,2000,1,22,0,1,0x9001,symbol("#count" hash 1cbf5b91),,',
+        "KeyedLoadIC,0x1020,2100,1,22,0,1,0x9002,symbol(hash 49c8685),,",
+        'map,Transition,2200,0x9003,0x9004,0x1010,1,22,,symbol("#lineStarts" hash 3ab4a261)',
+        ""
+      ].join("\n")
+    );
+    model = await parseLog(path);
+  });
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("prints private names as Symbol(#name) in named and keyed IC keys", () => {
+    const named = model.ics.find((site) => site.type === "LoadIC");
+    expect(named?.key).toBe("Symbol(#count)");
+    const keyed = model.ics.find((site) => site.type === "KeyedLoadIC");
+    expect(keyed?.keys).toEqual(["Symbol()"]);
+  });
+
+  it("prints private names as Symbol(#name) in map transition property names", () => {
+    const [site] = model.maps.transitionSites;
+    expect(site?.propertyNames).toEqual(["Symbol(#lineStarts)"]);
+    expect(site?.events.map(({ propertyName }) => propertyName)).toEqual([
+      "Symbol(#lineStarts)"
+    ]);
+    expect(model.maps.entries.get("0x9004")?.propertyName).toBe(
+      "Symbol(#lineStarts)"
+    );
+  });
+});

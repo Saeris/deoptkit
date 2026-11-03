@@ -58,13 +58,13 @@ export const FINDING_EXPLANATIONS: Record<
   },
   "deopt-loop": {
     explanation:
-      "TurboFan-optimized code for this position was discarded multiple times (eager deopts). Each cycle wastes compilation work and runs deoptimized code until V8 re-optimizes; repeated offenders can be permanently disabled from optimization.",
+      "The same optimized tier (Maglev or TurboFan) discarded its code for this position more than once: V8 re-optimized with the new type feedback and still bailed out. Each cycle wastes compilation work and runs deoptimized code until V8 re-optimizes; repeated offenders can be permanently disabled from optimization.",
     suggestedFix:
       "Stabilize the types flowing through this expression after warm-up: avoid mixing numbers and strings in the same operation, and avoid changing object shapes late in an object's life."
   },
   "eager-deopt": {
     explanation:
-      "Optimized code hit a state its type feedback did not predict and bailed out mid-execution.",
+      "Optimized code hit a state its type feedback did not predict and bailed out mid-execution. One bailout per tier while a function climbs Ignition → Maglev → TurboFan is normal warm-up.",
     suggestedFix:
       "Check what unusual value or shape reaches this position (the reason string names V8's failed assumption) and make its type consistent."
   },
@@ -297,7 +297,17 @@ export const computeFindings = (model: LogModel): Finding[] => {
     const hard = events.filter(
       ({ reason }) => !reason.startsWith("Insufficient type feedback")
     );
-    if (hard.length >= 2 && site.kind === "eager") {
+    // Climbing Ignition -> Maglev -> TurboFan costs a function one "wrong map" bailout
+    // per tier while V8 learns; only the same tier discarding the same position twice
+    // is a loop. Events with no known code object share one bucket.
+    const tierCounts = new Map<string, number>();
+    for (const { tier } of hard) {
+      const name = tier ?? "unknown";
+      tierCounts.set(name, (tierCounts.get(name) ?? 0) + 1);
+    }
+    const tiers = Object.fromEntries(tierCounts);
+    const repeats = Math.max(0, ...tierCounts.values());
+    if (repeats >= 2 && site.kind === "eager") {
       const reasons = distinctReasons(hard);
       findings.push(
         finding(
@@ -309,23 +319,27 @@ export const computeFindings = (model: LogModel): Finding[] => {
             kind: site.kind,
             count: hard.length,
             reasons,
-            inlinedCount: site.inlinedCount
+            inlinedCount: site.inlinedCount,
+            tiers
           }
         )
       );
-    } else if (hard.length === 1 && site.kind === "eager") {
+    } else if (hard.length >= 1 && site.kind === "eager") {
       const reasons = distinctReasons(hard);
       findings.push(
         finding(
           "eager-deopt",
           site,
-          `Eager deopt: ${reasons.join("; ")}`,
+          hard.length === 1
+            ? `Eager deopt: ${reasons.join("; ")}`
+            : `${hard.length} eager deopts, one per tier (${reasons.join("; ")})`,
           score("eager-deopt", hard.length, heat),
           {
             kind: site.kind,
             count: hard.length,
             reasons,
-            inlinedCount: site.inlinedCount
+            inlinedCount: site.inlinedCount,
+            tiers
           }
         )
       );
@@ -378,7 +392,9 @@ export const computeFindings = (model: LogModel): Finding[] => {
   const churnGroups = new Map<string, ChurnGroup>();
   for (const site of model.maps.transitionSites) {
     if (!isUserCode(site.file)) continue;
-    const key = `${site.functionName}|${site.file}`;
+    // Anonymous functions (V8 names them "") and module top-level code share one name,
+    // so the position of the function itself is what tells them apart.
+    const key = `${site.functionName}|${site.file}|${site.functionLine}|${site.functionColumn}`;
     let group = churnGroups.get(key);
     if (!group) {
       group = {
