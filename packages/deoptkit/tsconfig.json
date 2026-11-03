@@ -1,5 +1,5 @@
 {
-  "extends": "@saeris/configs/tsconfig",
+  "extends": "../../tsconfig.json",
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist"],
   "compilerOptions": {

@@ -70,6 +70,7 @@ principles for every tool:
 
 Single package (this repo), ESM, Node ≥ 22. Ships both a CLI entry (stdio MCP
 server) and a programmatic API.
+Since the workspace conversion (plan 010) the package lives at `packages/deoptkit/`; the tree below is relative to that directory.
 
 ```
 src/

@@ -79,7 +79,7 @@ observed("parse record", (i) => parseRecord(inputs[i % inputs.length]), {
 
 Then `profile_run { command: ["node", "bench/parse.bench.mjs"] }` and window the findings with `fromMark: "parse_record_start", toMark: "parse_record_end"`.
 
-Schema-driven inputs (Valibot + [Valimock](https://github.com/Saeris/valimock)) are the easiest way to get _realistically varied_ shapes — see [docs/recipes.md](./docs/recipes.md).
+Schema-driven inputs (Valibot + [Valimock](https://github.com/Saeris/valimock)) are the easiest way to get _realistically varied_ shapes — see [docs/recipes.md](../../docs/recipes.md).
 
 ### Vitest bench mode
 
@@ -106,9 +106,9 @@ test("parse record", async ({ bench }) => {
 });
 ```
 
-Run `vitest bench`, then `load_manifest { path: ".deopt/manifest.json" }` to load every worker's log as a session. (Coverage must be off — the preset refuses to run otherwise, since instrumentation changes optimization behavior.) To observe the shipped code at exact source positions, without Vite's module runner in between, use `deoptKit({ nativeEsm: true })`; see the [recipe](./docs/recipes.md) for its requirements.
+Run `vitest bench`, then `load_manifest { path: ".deopt/manifest.json" }` to load every worker's log as a session. (Coverage must be off — the preset refuses to run otherwise, since instrumentation changes optimization behavior.) To observe the shipped code at exact source positions, without Vite's module runner in between, use `deoptKit({ nativeEsm: true })`; see the [recipe](../../docs/recipes.md) for its requirements.
 
-Full recipes, including SSR apps (Next/Astro via `deoptkit/serve`) and builds, live in [docs/recipes.md](./docs/recipes.md).
+Full recipes, including SSR apps (Next/Astro via `deoptkit/serve`) and builds, live in [docs/recipes.md](../../docs/recipes.md).
 
 ## Inline editor diagnostics (LSP)
 
@@ -125,7 +125,7 @@ The server watches the file and republishes on every change, so `vitest bench --
 - **Neovim**: `vim.lsp.start({ name = "deoptkit", cmd = { "npx", "deoptkit", "lsp" }, root_dir = vim.fn.getcwd() })`
 - **Helix / Zed**: register a language server with command `npx deoptkit lsp` and attach it to `javascript`/`typescript`.
 
-**VSCode** has no built-in generic LSP client, so a dedicated deoptkit extension is the tracked next step ([BENCHMARKING.md §8](./docs/BENCHMARKING.md), v1.4). Until then, VSCode + Claude Code users get the same findings through the **MCP server** — the agent reads them via `get_findings` and reports them in chat, which needs no editor setup at all.
+**VSCode** has no built-in generic LSP client, so a dedicated deoptkit extension is the tracked next step ([BENCHMARKING.md §8](../../docs/BENCHMARKING.md), v1.4). Until then, VSCode + Claude Code users get the same findings through the **MCP server** — the agent reads them via `get_findings` and reports them in chat, which needs no editor setup at all.
 
 ## CI regression gating
 
@@ -148,16 +148,7 @@ Baselines contain identity-only structural findings (no line numbers, severities
 
 ## Contributing
 
-The project uses [Vite+][viteplus] as a unified toolchain (Oxlint + Oxfmt + tsdown + Vitest) and [Bumpy][bumpy] for versioning and release.
-
-```bash
-vp install           # install dependencies
-vp check --fix       # format + lint + typecheck (with autofixes)
-vp test              # run Vitest (generates real V8 logs from fixtures/workloads)
-node fixtures/generate.mjs   # regenerate fixture logs by hand for inspection
-```
-
-Tests generate real V8 logs at run time by executing the pathological workloads in `fixtures/workloads/` under logging flags — nothing is mocked, so a Node upgrade that changes the log format fails loudly. Design and roadmap: [docs/SPEC.md](./docs/SPEC.md) and [docs/BENCHMARKING.md](./docs/BENCHMARKING.md).
+The project uses [Vite+][viteplus] as a unified toolchain (Oxlint + Oxfmt + tsdown + Vitest) and [Bumpy][bumpy] for versioning and release. Run `vp install`, `vp check --fix`, and `vp test` from the repository root, and `vp pack` and `node fixtures/generate.mjs` from this package directory. See the [repository README](../../README.md) for the repository layout, and [docs/SPEC.md](../../docs/SPEC.md) and [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md) for the design and roadmap.
 
 ## Acknowledgements
 

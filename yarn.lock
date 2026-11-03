@@ -1122,20 +1122,28 @@ __metadata:
   languageName: node
   linkType: hard
 
-"deoptkit@workspace:.":
+"deoptkit-workspace@workspace:.":
   version: 0.0.0-use.local
-  resolution: "deoptkit@workspace:."
+  resolution: "deoptkit-workspace@workspace:."
   dependencies:
-    "@jridgewell/trace-mapping": "npm:^0.3.31"
-    "@modelcontextprotocol/sdk": "npm:^1.32.2"
     "@saeris/configs": "npm:^1.6.1"
     "@types/node": "npm:^26.6.6"
-    "@valibot/to-json-schema": "npm:^1.8.0"
     "@varlock/bumpy": "npm:^1.19.0"
     "@vitest/coverage-v8": "catalog:"
     typescript: "npm:6.0.3"
-    valibot: "npm:^1.5.0"
     vite-plus: "catalog:"
+    vitest: "catalog:"
+  languageName: unknown
+  linkType: soft
+
+"deoptkit@workspace:packages/deoptkit":
+  version: 0.0.0-use.local
+  resolution: "deoptkit@workspace:packages/deoptkit"
+  dependencies:
+    "@jridgewell/trace-mapping": "npm:^0.3.31"
+    "@modelcontextprotocol/sdk": "npm:^1.32.2"
+    "@valibot/to-json-schema": "npm:^1.8.0"
+    valibot: "npm:^1.5.0"
     vitest: "catalog:"
   peerDependencies:
     vitest: ">=5"

@@ -20,7 +20,8 @@
   "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Saeris/deoptkit.git"
+    "url": "https://github.com/Saeris/deoptkit.git",
+    "directory": "packages/deoptkit"
   },
   "files": [
     "dist/**/*",
@@ -81,29 +82,15 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "ci": "vp check && vp test",
     "build": "vp pack",
-    "check": "vp check",
-    "format": "vp check --fix",
-    "test": "vp test --fileParallelism"
+    "test": "vp test"
   },
   "devDependencies": {
-    "@saeris/configs": "^1.6.1",
-    "@types/node": "^26.6.6",
-    "@varlock/bumpy": "^1.19.0",
-    "@vitest/coverage-v8": "catalog:",
-    "typescript": "6.0.3",
-    "vite-plus": "catalog:",
     "vitest": "catalog:"
-  },
-  "resolutions": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
-    "vitest": "5.0.5"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "yarn@4.18.1",
   "dependencies": {
     "@jridgewell/trace-mapping": "^0.3.31",
     "@modelcontextprotocol/sdk": "^1.32.2",

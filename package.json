@@ -1,0 +1,39 @@
+{
+  "name": "deoptkit-workspace",
+  "private": true,
+  "license": "MIT",
+  "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Saeris/deoptkit.git"
+  },
+  "workspaces": [
+    "packages/*",
+    "extensions/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "ci": "vp check && vp test",
+    "build": "vp run -r build",
+    "check": "vp check",
+    "format": "vp check --fix",
+    "test": "vp test --fileParallelism"
+  },
+  "devDependencies": {
+    "@saeris/configs": "^1.6.1",
+    "@types/node": "^26.6.6",
+    "@varlock/bumpy": "^1.19.0",
+    "@vitest/coverage-v8": "catalog:",
+    "typescript": "6.0.3",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "resolutions": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
+    "vitest": "5.0.5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "yarn@4.18.1"
+}

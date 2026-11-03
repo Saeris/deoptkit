@@ -1,10 +1,12 @@
 import { defineConfig } from "vite-plus";
-import { lint, fmt } from "@saeris/configs";
 import manifest from "./package.json" with { type: "json" };
 
 export default defineConfig({
-  lint,
-  fmt,
+  run: {
+    tasks: {
+      build: { command: "vp pack", cache: true }
+    }
+  },
   // ── Builds (tsdown) ─────────────────────────────────────────────────
   pack: {
     entry: {

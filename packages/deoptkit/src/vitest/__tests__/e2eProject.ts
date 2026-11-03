@@ -8,11 +8,21 @@ import {
   writeFileSync
 } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-/** Root of the checkout the tests run in, so nothing here hard-codes a path. */
-const REPO = join(import.meta.dirname, "..", "..", "..");
+const require = createRequire(import.meta.url);
+
+/** The package directory: what a consumer installs as `deoptkit` (package.json + dist). */
+const PACKAGE = join(import.meta.dirname, "..", "..", "..");
+/** Hoisted workspace dependencies resolve from this file like any import would. */
+const VITEST_DIR = dirname(require.resolve("vitest/package.json"));
+const VP_BIN = join(
+  dirname(require.resolve("vite-plus/package.json")),
+  "bin",
+  "vp"
+);
 
 const LIB = `export interface Shape { x: number; [k: string]: number }
 export const getX = (obj: Shape): number => obj.x;
@@ -54,11 +64,10 @@ export default defineConfig({
  * wrong reasons. `vp pack` takes about a second.
  */
 export const ensureDist = (): void => {
-  const result = spawnSync(
-    process.execPath,
-    [join(REPO, "node_modules", "vite-plus", "bin", "vp"), "pack"],
-    { cwd: REPO, encoding: "utf8" }
-  );
+  const result = spawnSync(process.execPath, [VP_BIN, "pack"], {
+    cwd: PACKAGE,
+    encoding: "utf8"
+  });
   if (result.status !== 0) {
     throw new Error(
       `vp pack failed (status ${String(result.status)}):\n${result.stdout}\n${result.stderr}`
@@ -87,7 +96,7 @@ export interface E2eProjectOptions {
 /**
  * A throwaway consumer project: a megamorphic probe benchmark plus a Vitest config
  * using the built `deoptkit/vitest` preset. `node_modules` holds links to the
- * repository's own `vitest` and to the repository root as `deoptkit`, so the project
+ * repository's own `vitest` and to the package directory as `deoptkit`, so the project
  * resolves the package exactly as an npm consumer would.
  */
 export const createE2eProject = async (
@@ -103,8 +112,8 @@ export const createE2eProject = async (
   writeFileSync(configPath, configFor(outDir, options.presetOptions));
 
   const links = [
-    [join(dir, "node_modules", "vitest"), join(REPO, "node_modules", "vitest")],
-    [join(dir, "node_modules", "deoptkit"), REPO]
+    [join(dir, "node_modules", "vitest"), VITEST_DIR],
+    [join(dir, "node_modules", "deoptkit"), PACKAGE]
   ] as const;
   mkdirSync(join(dir, "node_modules"));
   // Junctions need no elevated privileges on Windows and behave as symlinks elsewhere.
@@ -118,7 +127,7 @@ export const createE2eProject = async (
       spawnSync(
         process.execPath,
         [
-          join(REPO, "node_modules", "vitest", "vitest.mjs"),
+          join(VITEST_DIR, "vitest.mjs"),
           "bench",
           "--run",
           "--config",
@@ -132,8 +141,8 @@ export const createE2eProject = async (
       for (const [path] of links) unlinkSync(path);
       await rm(dir, { recursive: true, force: true });
       if (
-        !existsSync(join(REPO, "node_modules", "vitest", "package.json")) ||
-        !existsSync(join(REPO, "package.json"))
+        !existsSync(join(VITEST_DIR, "package.json")) ||
+        !existsSync(join(PACKAGE, "package.json"))
       ) {
         throw new Error(
           "e2e cleanup removed repository files through a node_modules link"
