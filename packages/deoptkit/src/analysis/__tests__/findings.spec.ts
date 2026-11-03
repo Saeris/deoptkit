@@ -97,6 +97,7 @@ describe("computeFindings user-code filter", () => {
       functionIndex: [],
       markers: [],
       codeEntryCount: 0,
+      codeSourceInfoCount: 0,
       warnings: { unknownCommands: {}, badLines: 0 }
     };
     expect(computeFindings(model).map(({ file }) => file)).toEqual([
