@@ -1,0 +1,13 @@
+{
+  "name": "deoptkit",
+  "description": "deoptkit: V8 deoptimization tooling for AI agents",
+  "owner": { "name": "Drake Costa", "url": "https://saeris.gg" },
+  "plugins": [
+    {
+      "name": "deoptkit",
+      "source": "./plugins/deoptkit",
+      "description": "deoptkit MCP server and the profile → findings → fix → compare workflow skill",
+      "category": "performance"
+    }
+  ]
+}

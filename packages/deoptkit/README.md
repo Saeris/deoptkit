@@ -28,6 +28,8 @@ deoptkit ships several surfaces over one engine, all from the `deoptkit` package
 
 ## Quick start (AI agent + MCP)
 
+For Claude Code the fastest path is the plugin: run `/plugin marketplace add Saeris/deoptkit`, then `/plugin install deoptkit@deoptkit`. It registers the server and adds a skill with the workflow. The manual registration below works for any MCP host.
+
 Register the stdio server with your MCP host. For **Claude Code**, add to `.mcp.json` in your project (or run `claude mcp add`):
 
 ```json

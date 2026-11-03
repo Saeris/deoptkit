@@ -1,0 +1,11 @@
+{
+  "name": "deoptkit",
+  "displayName": "deoptkit",
+  "version": "0.1.0",
+  "description": "V8 deoptimization analysis for Node.js: profile a workload, get ranked findings (megamorphic ICs, deopt loops, map churn), fix, and verify with a before/after comparison.",
+  "author": { "name": "Drake Costa", "url": "https://saeris.gg" },
+  "homepage": "https://github.com/Saeris/deoptkit#readme",
+  "repository": "https://github.com/Saeris/deoptkit",
+  "license": "MIT",
+  "keywords": ["v8", "performance", "deoptimization", "profiling", "mcp"]
+}
