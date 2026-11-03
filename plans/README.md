@@ -21,9 +21,14 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 | 011  | Report workspace-relative paths to agents and make `deoptkit ci` baselines portable           | P1       | M      | 010           | DONE                                                                                                         |
 | 012  | Slim tool responses (explanations once per kind, bounded IC histories, profile_run compareTo) | P1       | M      | 011           | DONE                                                                                                         |
 | 013  | Merge findings across sessions in one `get_findings` call (vitest bench manifests)            | P2       | S      | 012           | DONE                                                                                                         |
+| 014  | Readable optimization tiers and session quality warnings (cold runs, no ticks, no user code)  | P2       | M      | 015           | TODO                                                                                                         |
 | 015  | Attribute ICs, ticks, and map transitions through V8 inlining tables (`code-source-info`)     | P1       | L      | 010           | DONE                                                                                                         |
+| 016  | Parse `map-details` into structured hidden-class descriptions and show sibling shapes         | P2       | L      | 015           | TODO                                                                                                         |
+| 017  | `get_profile` call trees (top-down and bottom-up, just-my-code)                               | P2       | M      | 015           | TODO                                                                                                         |
 | 018  | Gate this repository's own parser with `deoptkit ci` (self-dogfooding)                        | P2       | S      | 011           | DONE (part 1: CLI fixes, Windows path fix, bench; the CI gate step and committed baseline wait for plan 020) |
 | 019  | Ship a Claude Code plugin (marketplace + MCP server + workflow skill)                         | P2       | S      | 010           | DONE                                                                                                         |
+| 020  | One keyed IC site per position; "Insufficient type feedback" deopts classified as soft        | P1       | M      | 015           | TODO                                                                                                         |
+| 021  | Commit the parser `deoptkit ci` baseline and enable the CI gate (plan 018, part 2)            | P2       | S      | 018, 020      | TODO                                                                                                         |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -36,6 +41,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 001 and 003 both touch `src/parser/parseLog.ts`; run them sequentially (001 first) to avoid merge conflicts, or hand both to one executor.
 - 007 touches `src/parser/parseLog.ts` as well (tick samples); schedule it after 001 and 003.
 - 009 requires 010: the maintainer chose the workspace conversion (Option A) on 2026-11-03, and the extension package lives under `extensions/*` of that workspace.
+- 014, 016, 017, and 020 all build on the frames, tier markers, and `codeSourceInfoCount` that 015 added to the parser; they touch different handlers (`code-creation`, `map`/`map-details`, `tick`, `handleIc`) and can run in parallel, with the reviewer resolving adjacent-hunk conflicts.
+- 021 requires 020: the dogfood gate flickered because keyed IC sites were modeled per runtime key; the baseline is only stable once 020 lands.
+- 013 requires 012 (the `kinds` legend and `slimFinding`); 018 required 011 (portable baseline identities).
 - Plans 001–009 were written against the pre-conversion layout; once 010 lands, every `src/...` and `fixtures/...` path they cite lives under `packages/deoptkit/`.
 
 ## Audit findings (vetted, ordered by leverage)
@@ -65,6 +73,17 @@ Evidence was verified first-hand by reading the cited code and, where noted, by 
 - **Map-details parsing (finding 10).** Parse the `map-details` block into `{ properties, stable, prototype }` at load, drop the raw text, and let churn findings list which properties differ across the sibling maps. Payoff: the churn explanation names the fix; memory per session falls. Cost: the "gnarly regexes" SPEC §3 warned about.
 - **Self-dogfooding (finding 13).** A `bench/parse.bench.mjs` over `fixtures/logs` plus a `deoptkit ci` step in CI with committed baselines. Small, and the first real-world calibration data for the severity bands.
 - **Claude Code plugin (finding 14).** Thin: `.claude-plugin/plugin.json`, `.mcp.json`, one skill. Keep it a projection over the server's `instructions`, never a second source of truth.
+
+## Found during execution (2026-11-03)
+
+Defects and facts the executors surfaced while implementing the plans above, each turned into a step or a plan rather than worked around:
+
+- On Windows V8 logs CommonJS scripts with backslash OS paths, so the `/node_modules/` test in `isUserCode` let dependency code (ajv) into findings and baselines (fixed in 018).
+- Bundlers hash chunk names, so baseline identities keyed on `dist/parseLog-<hash>.mjs` changed on every build; identities now use the source-mapped original file (018).
+- Keyed IC sites were modeled as one site per runtime key, so the megamorphic entry named a random key per run (plan 020). Deopts V8 reports as "Insufficient type feedback" are warm-up bailouts logged as eager; counting two as a loop flickered the gate (020). Threshold flicker in general is absorbed by `deoptkit ci --accumulate` (018).
+- For TurboFan and Maglev code the pc of an IC or map event and every non-top sampled frame is a return address; V8 resolves it one byte back, and so does the parser now (015).
+- 44 of the megamorphic fixture's 64 ticks sit in the `LoadIC_Megamorphic` builtin with no JS frame on the sampled stack, so function-level self time cannot see IC cost; severity keeps the file-level heat proxy (015, Step 6 withdrawn).
+- Two entries in one Vite+ `pack` config can share a chunk; the bundled LSP server loaded the extension body that way (009 uses two configs).
 
 ## Fixed during the audit session (uncommitted in the working tree)
 
