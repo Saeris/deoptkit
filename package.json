@@ -14,7 +14,6 @@
   "type": "module",
   "scripts": {
     "ci": "vp check && vp test",
-    "build": "vp run -r build",
     "check": "vp check",
     "format": "vp check --fix",
     "test": "vp test --fileParallelism"

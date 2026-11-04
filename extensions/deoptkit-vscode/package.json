@@ -52,9 +52,6 @@
       }
     }
   },
-  "scripts": {
-    "build": "vp pack && vp exec vsce package --no-dependencies"
-  },
   "devDependencies": {
     "@types/vscode": "^1.125.0",
     "deoptkit": "workspace:*",
