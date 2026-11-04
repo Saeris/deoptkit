@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"],
+  "compilerOptions": {
+    // project-local paths live here, not in the shared base
+    "outDir": "./dist",
+    "rootDir": "."
+  }
+}

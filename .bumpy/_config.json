@@ -6,6 +6,12 @@
   "packages": {
     "deoptkit": {
       "buildCommand": "vp pack"
+    },
+    "deoptkit-vscode": {
+      "buildCommand": "vp pack && vp exec vsce package --no-dependencies",
+      "publishCommand": "vp exec vsce publish --no-dependencies",
+      "skipNpmPublish": true,
+      "releaseTriggeringDevDeps": ["deoptkit"]
     }
   }
 }

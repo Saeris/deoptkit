@@ -1,0 +1,155 @@
+import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
+import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { gitHubAnnotation, parseCiArgs, runCi } from "../ci";
+
+const WORKLOAD_DIR = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "..",
+  "fixtures",
+  "workloads"
+);
+
+describe("deoptkit ci", () => {
+  let dir: string;
+  let app: string;
+  let outDir: string;
+  let previousCwd: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "deoptkit-ci-"));
+    app = join(dir, "app.js");
+    outDir = join(dir, ".deopt");
+    // Baseline paths are relative to the working directory, so run from the workspace
+    // the script lives in. (The forks pool keeps this chdir inside this spec's process.)
+    previousCwd = process.cwd();
+    process.chdir(dir);
+  });
+
+  afterAll(async () => {
+    process.chdir(previousCwd);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("rejects bad usage with exit 2", async () => {
+    await expect(runCi([])).resolves.toBe(2);
+    await expect(runCi(["--nope", "x.mjs"])).resolves.toBe(2);
+    expect(parseCiArgs(["--out-dir"])).toEqual({
+      error: "--out-dir requires a value"
+    });
+  });
+
+  it("parses --accumulate and refuses it together with --update", async () => {
+    expect(parseCiArgs(["--accumulate", "x.mjs"])).toMatchObject({
+      accumulate: true,
+      update: false
+    });
+    // Both write the baseline but with opposite intent (replace vs. union): combining
+    // them is ambiguous, so it is a usage error rather than a silent precedence rule.
+    expect(parseCiArgs(["--update", "--accumulate", "x.mjs"])).toHaveProperty(
+      "error"
+    );
+    await expect(runCi(["--update", "--accumulate", "x.mjs"])).resolves.toBe(2);
+  });
+
+  // The snapshot lifecycle: first run writes a baseline and passes; an unchanged run
+  // stays clean; a regression (the shape-churning variant replacing the fixed one)
+  // fails with exit 1; --update accepts it; the accepted state then passes.
+  it("gates structural regressions against a checked-in baseline", async () => {
+    await copyFile(join(WORKLOAD_DIR, "map-churn-fixed.js"), app);
+    await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+    const { readdir } = await import("node:fs/promises");
+    const baselines = await readdir(join(outDir, "baselines"));
+    expect(baselines).toHaveLength(1);
+    const baseline = JSON.parse(
+      await readFile(join(outDir, "baselines", baselines[0] ?? ""), "utf8")
+    ) as { script: string; findings: unknown[] };
+    expect(baseline.script).toBe(app);
+
+    // Same code, same baseline: clean.
+    await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // Regression: conditional-shape constructor replaces the fixed one.
+    await copyFile(join(WORKLOAD_DIR, "map-churn.js"), app);
+    await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(1);
+
+    // Accept the new state, then it passes.
+    await expect(runCi(["--out-dir", outDir, "--update", app])).resolves.toBe(
+      0
+    );
+    await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // A baseline is committed and must match on any machine; an absolute path in the
+    // identity makes every CI run fail with "NEW" findings. (The fixed variant's first
+    // baseline is empty, so the accepted regression is where entries exist to check.)
+    const accepted = JSON.parse(
+      await readFile(join(outDir, "baselines", baselines[0] ?? ""), "utf8")
+    ) as { findings: { identity: string; file: string }[] };
+    expect(accepted.findings.length).toBeGreaterThan(0);
+    for (const entry of accepted.findings) {
+      expect(entry.file.startsWith("file:")).toBe(false);
+      expect(isAbsolute(entry.file)).toBe(false);
+      expect(entry.identity).toContain(entry.file);
+      expect(entry.file).toBe("app.js");
+    }
+
+    // Fixing it again is not a failure — resolved findings only prompt an update notice.
+    await copyFile(join(WORKLOAD_DIR, "map-churn-fixed.js"), app);
+    await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // Findings at a threshold (a keyed IC with 4-5 transitions, a deopt site with exactly
+    // 2 eager deopts) flicker between runs; accumulating over several runs lets the gate
+    // fail only on genuinely new sites, which is the invariant it exists for. With the
+    // fixed variant back in place the churn entries no longer occur, yet --accumulate
+    // must keep them (--update would have emptied the baseline).
+    await expect(
+      runCi(["--out-dir", outDir, "--accumulate", app])
+    ).resolves.toBe(0);
+    const accumulated = JSON.parse(
+      await readFile(join(outDir, "baselines", baselines[0] ?? ""), "utf8")
+    ) as { findings: { identity: string }[] };
+    expect(accumulated.findings.length).toBeGreaterThanOrEqual(
+      accepted.findings.length
+    );
+    expect(accumulated.findings.map(({ identity }) => identity)).toEqual(
+      expect.arrayContaining(accepted.findings.map(({ identity }) => identity))
+    );
+
+    // Every run rewrites the findings interchange the LSP and agents consume.
+    const interchange = JSON.parse(
+      await readFile(join(outDir, "findings.json"), "utf8")
+    ) as {
+      createdAt: string;
+      findings: { kind: string; script: string }[];
+    };
+    expect(interchange.createdAt).toMatch(/^\d{4}-/u);
+    for (const found of interchange.findings) {
+      expect(found.script).toBe(app);
+      expect(found.kind.length).toBeGreaterThan(0);
+    }
+  }, 300_000);
+
+  it("formats GitHub annotations at the original source position", () => {
+    const annotation = gitHubAnnotation({
+      kind: "megamorphic-ic",
+      severity: 50,
+      file: "file:///C:/repo/dist/app.js",
+      line: 3,
+      column: 9,
+      functionName: "readId",
+      summary:
+        'LoadIC for property "id" went megamorphic (16 recorded transitions)',
+      explanation: "",
+      suggestedFix: "",
+      evidence: {},
+      original: { file: "file:///C:/repo/src/app.ts", line: 12, column: 9 }
+    });
+    expect(annotation).toContain("::warning file=");
+    expect(annotation).toContain("line=12");
+    expect(annotation).toContain("app.ts");
+    expect(annotation).toContain("deoptkit megamorphic-ic");
+  });
+});

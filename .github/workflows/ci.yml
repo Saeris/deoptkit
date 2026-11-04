@@ -14,23 +14,33 @@ jobs:
       fail-fast: false
       matrix:
         # Active LTS and Current track the Node release calendar automatically.
-        # Previous LTS is pinned; bump it once per year when a new even-numbered
-        # Node major reaches LTS status. Each Node major ships a different V8, so
-        # this matrix doubles as the V8 log-format drift canary: tests generate
-        # real logs from fixtures/workloads at run time.
-        node-version: ["22", "lts", "latest"]
-        os: [ubuntu-latest]
-        include:
-          # V8 log paths/sampling differ on Windows; cover it on one LTS lane.
-          - node-version: "lts"
-            os: windows-latest
+        # The previous LTS is pinned as the support floor (engines.node in the
+        # package.json files); move both together. Each Node major ships a
+        # different V8, so this matrix doubles as the V8 log-format drift canary:
+        # tests generate real logs from packages/deoptkit/fixtures/workloads at
+        # run time, and each OS prints them differently (pointer formats, paths,
+        # sampling). macos-latest is Apple silicon; Intel Macs are not covered.
+        node-version: ["24", "lts", "latest"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@v1.21.2
         with:
           node-version: ${{ matrix.node-version }}
           cache: true
 
+      # The type-aware lint resolves `deoptkit/lsp` through the built `types` export;
+      # without dist/ its types silently become `any`.
+      - run: vp -C packages/deoptkit pack
+      - run: vp -C extensions/deoptkit-vscode pack
       - run: vp check
       - run: vp test
+
+      # deoptkit observing its own parser (docs/BENCHMARKING.md §5, §7): a structural
+      # regression gate over bench/parse.bench.mjs against the committed baseline in
+      # packages/deoptkit/.deopt/baselines. One lane only: each V8 major optimizes
+      # differently and the baseline is a snapshot of the LTS lane's behavior.
+      - if: matrix.node-version == 'lts' && matrix.os == 'ubuntu-latest'
+        working-directory: packages/deoptkit
+        run: node dist/main.mjs ci bench/parse.bench.mjs

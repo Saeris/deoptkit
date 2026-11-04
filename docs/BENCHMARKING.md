@@ -46,9 +46,9 @@ export default defineConfig({
 
 What the preset does:
 
-1. Forces `pool: "forks"` (worker threads share a process → interleaved isolate logs) and injects the V8 flag set via `poolOptions.forks.execArgv`, with per-process logfiles under `outDir`.
+1. Forces `pool: "forks"` (worker threads share a process → interleaved isolate logs) and injects the V8 flag set via `execArgv`, with per-process logfiles under `outDir`.
 2. Refuses to run with coverage enabled (§2.4).
-3. Writes a manifest (`.deopt/manifest.json`) mapping bench files → logfiles after the run.
+3. Writes a manifest (`manifest.json`) and the findings interchange (`findings.json`, with source-mapped original positions) after the run.
 4. Bench cases wrap their bodies with the harness's marks (via a small `benchObserved` helper or a vitest-bench setup hook), so each case is a window.
 
 Agent workflow: run `vitest bench` (via Bash), then `load_log` each manifest entry — or a convenience `load_manifest` tool that loads them all and names sessions after bench files. Positions resolve through the existing source-map layer (vitest serves inline maps), which is why that layer was a prerequisite.

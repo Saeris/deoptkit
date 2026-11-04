@@ -1,0 +1,75 @@
+import { resolve } from "node:path";
+import type { LogModel } from "./model/logModel";
+
+/** One parsed v8.log held in memory. */
+export interface Session {
+  id: string;
+  /** Absolute path of the v8.log this session was parsed from. */
+  source: string;
+  loadedAt: string;
+  model: LogModel;
+  /** Absolute directory that reported paths are relative to. */
+  workspaceRoot: string;
+}
+
+/** What `list_sessions` reports for each session. */
+export interface SessionSummary {
+  id: string;
+  source: string;
+  loadedAt: string;
+  v8Version: string;
+  icSites: number;
+  deoptSites: number;
+}
+
+/**
+ * Parsed models hold every map entry and script source, so sessions are memory-heavy;
+ * keep only the most recent few. Compare workflows need two, plus headroom to poke at
+ * older runs.
+ */
+const MAX_SESSIONS = 8;
+
+/** In-memory registry of loaded log sessions, evicting the oldest past MAX_SESSIONS. */
+export class SessionStore {
+  #sessions = new Map<string, Session>();
+  #nextId = 1;
+
+  add(
+    source: string,
+    model: LogModel,
+    workspaceRoot: string = process.cwd()
+  ): Session {
+    const session: Session = {
+      id: `s${this.#nextId++}`,
+      source,
+      loadedAt: new Date().toISOString(),
+      model,
+      workspaceRoot: resolve(workspaceRoot)
+    };
+    this.#sessions.set(session.id, session);
+    // Map preserves insertion order, so the first key is always the oldest session.
+    while (this.#sessions.size > MAX_SESSIONS) {
+      const oldest = this.#sessions.keys().next().value;
+      if (oldest === undefined) break;
+      this.#sessions.delete(oldest);
+    }
+    return session;
+  }
+
+  get(id: string): Session | undefined {
+    return this.#sessions.get(id);
+  }
+
+  list(): SessionSummary[] {
+    return [...this.#sessions.values()].map(
+      ({ id, source, loadedAt, model }) => ({
+        id,
+        source,
+        loadedAt,
+        v8Version: model.v8Version,
+        icSites: model.ics.length,
+        deoptSites: model.deopts.length
+      })
+    );
+  }
+}

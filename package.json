@@ -1,119 +1,39 @@
 {
-  "name": "deoptkit",
-  "version": "0.1.0",
-  "description": "A V8 deoptimization toolkit for AI agents and dev workflows: MCP server, findings engine, benchmark harness, and fix-verify comparison for inline caches, deopts, and hidden-class churn",
-  "keywords": [
-    "v8",
-    "deoptimization",
-    "deopt",
-    "performance",
-    "profiling",
-    "inline-cache",
-    "hidden-class",
-    "mcp",
-    "modelcontextprotocol",
-    "mcp-server",
-    "benchmark"
-  ],
-  "homepage": "https://github.com/Saeris/deoptkit#readme",
+  "name": "deoptkit-workspace",
+  "private": true,
   "license": "MIT",
   "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
   "repository": {
     "type": "git",
     "url": "https://github.com/Saeris/deoptkit.git"
   },
-  "files": [
-    "dist/**/*",
-    "THIRD_PARTY_NOTICES.md"
+  "workspaces": [
+    "packages/*",
+    "extensions/*"
   ],
   "type": "module",
-  "sideEffects": false,
-  "bin": "./dist/main.mjs",
-  "exports": {
-    ".": {
-      "import": {
-        "development": "./src/index.ts",
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      }
-    },
-    "./harness": {
-      "import": {
-        "development": "./src/harness/index.ts",
-        "types": "./dist/harness.d.mts",
-        "default": "./dist/harness.mjs"
-      }
-    },
-    "./vitest": {
-      "import": {
-        "development": "./src/vitest/index.ts",
-        "types": "./dist/vitest.d.mts",
-        "default": "./dist/vitest.mjs"
-      }
-    },
-    "./vitest/global-setup": {
-      "import": {
-        "development": "./src/vitest/globalSetup.ts",
-        "types": "./dist/vitest-global-setup.d.mts",
-        "default": "./dist/vitest-global-setup.mjs"
-      }
-    },
-    "./bench": {
-      "import": {
-        "development": "./src/bench/index.ts",
-        "types": "./dist/bench.d.mts",
-        "default": "./dist/bench.mjs"
-      }
-    },
-    "./serve": {
-      "import": {
-        "development": "./src/serve/index.ts",
-        "types": "./dist/serve.d.mts",
-        "default": "./dist/serve.mjs"
-      }
-    },
-    "./package.json": "./package.json"
-  },
-  "peerDependencies": {
-    "vitest": ">=4"
-  },
-  "peerDependenciesMeta": {
-    "vitest": {
-      "optional": true
-    }
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org"
-  },
   "scripts": {
     "ci": "vp check && vp test",
-    "build": "vp pack",
     "check": "vp check",
     "format": "vp check --fix",
     "test": "vp test --fileParallelism"
   },
   "devDependencies": {
     "@saeris/configs": "^1.6.1",
-    "@types/node": "^26.0.1",
-    "@varlock/bumpy": "^1.18.0",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@types/node": "^26.6.6",
+    "@varlock/bumpy": "^1.19.0",
+    "@vitest/coverage-v8": "catalog:",
+    "@vscode/vsce": "^4.1.0",
     "typescript": "6.0.3",
-    "vite-plus": "latest",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "resolutions": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
-    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
+    "vitest": "5.0.5"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
-  "packageManager": "yarn@4.17.0",
-  "dependencies": {
-    "@jridgewell/trace-mapping": "^0.3.31",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@valibot/to-json-schema": "^1.7.1",
-    "valibot": "^1.4.2"
-  }
+  "packageManager": "yarn@4.18.1"
 }

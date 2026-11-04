@@ -1,0 +1,118 @@
+import { spawnSync } from "node:child_process";
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { generateWorkloadLog } from "../../parser/__tests__/helpers";
+import { setup, teardown } from "../globalSetup";
+import type { DeoptKitFindingsFile } from "../globalSetup";
+import { deoptKit } from "../index";
+
+describe("deoptKit vitest preset", () => {
+  let outDir: string;
+
+  beforeAll(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "deoptkit-preset-"));
+  });
+
+  afterAll(async () => {
+    await rm(outDir, { recursive: true, force: true });
+    delete process.env["DEOPTKIT_OUT_DIR"];
+  });
+
+  it("configures the forks pool with the V8 flag set and per-pid logfiles", () => {
+    const config = deoptKit({ outDir });
+    expect(config.pool).toBe("forks");
+    const { execArgv } = config;
+    expect(execArgv).toEqual(
+      expect.arrayContaining(["--log-ic", "--log-deopt", "--prof"])
+    );
+    const logfileFlag = execArgv.find((flag) => flag.startsWith("--logfile="));
+    // %p expands to the worker pid, giving each forked process its own log.
+    expect(logfileFlag).toContain("v8-%p.log");
+    expect(logfileFlag).toContain(outDir);
+    expect(config.globalSetup).toEqual(["deoptkit/vitest/global-setup"]);
+    expect(process.env["DEOPTKIT_OUT_DIR"]).toBe(outDir);
+  });
+
+  // The module runner rewrites imports into property reads that V8 then reports as IC
+  // sites; native mode is what makes "the code V8 sees is the code you ship" true. It
+  // must stay opt-in, so the default config may not carry the Vitest experimental keys.
+  it("only switches Vitest to native ESM when nativeEsm is set", () => {
+    expect(deoptKit({ outDir })).not.toHaveProperty("experimental");
+    expect(deoptKit({ outDir, nativeEsm: true }).experimental).toEqual({
+      viteModuleRunner: false,
+      nodeLoader: false
+    });
+  });
+
+  // The whole observation is invalid under coverage instrumentation; failing loudly
+  // beats silently reporting optimization behavior of instrumented code.
+  it("refuses to run with coverage enabled", () => {
+    deoptKit({ outDir });
+    expect(() => setup({ config: { coverage: { enabled: true } } })).toThrow(
+      /coverage/u
+    );
+  });
+
+  // The findings interchange is what the LSP reads; a teardown that writes the
+  // manifest but no findings leaves editors blind to everything the bench observed.
+  it("writes a manifest and the findings interchange for produced logs on teardown", async () => {
+    deoptKit({ outDir });
+    const logfile = join(outDir, "v8-12345.log");
+    await rename(generateWorkloadLog("map-churn", outDir), logfile);
+    await writeFile(join(outDir, "unrelated.txt"), "ignore me\n");
+    setup({ config: { coverage: { enabled: false } } });
+    await teardown();
+    const manifest = JSON.parse(
+      await readFile(join(outDir, "manifest.json"), "utf8")
+    ) as {
+      outDir: string;
+      logfiles: string[];
+    };
+    expect(manifest.outDir).toBe(outDir);
+    expect(manifest.logfiles).toEqual([logfile]);
+    const payload = JSON.parse(
+      await readFile(join(outDir, "findings.json"), "utf8")
+    ) as DeoptKitFindingsFile;
+    expect(payload.findings.length).toBeGreaterThan(0);
+    for (const finding of payload.findings)
+      expect(finding.script).toBe(logfile);
+    expect(payload.findings.some(({ kind }) => kind === "megamorphic-ic")).toBe(
+      true
+    );
+  }, 60_000);
+
+  // The preset's per-process logs depend on V8 actually expanding %p to the pid;
+  // if a V8 upgrade drops the placeholder, this catches it before users do.
+  it("v8 expands %p in --logfile to the process pid", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deoptkit-pid-"));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [
+          `--logfile=${join(dir, "v8-%p.log")}`,
+          "--no-logfile-per-isolate",
+          "--log-code",
+          "-e",
+          "0"
+        ],
+        { encoding: "utf8" }
+      );
+      expect(result.status).toBe(0);
+      const produced = (await readdir(dir)).filter((name) =>
+        /^v8-\d+\.log$/u.test(name)
+      );
+      expect(produced).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});

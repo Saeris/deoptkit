@@ -70,6 +70,7 @@ principles for every tool:
 
 Single package (this repo), ESM, Node ≥ 22. Ships both a CLI entry (stdio MCP
 server) and a programmatic API.
+Since the workspace conversion (plan 010) the package lives at `packages/deoptkit/`; the tree below is relative to that directory.
 
 ```
 src/
@@ -175,9 +176,9 @@ function × hit count.
 
 - Detect V8 version via `node -p process.versions.v8` on the target executable.
 - Prepare version-appropriate flags (modern: `--log-deopt --log-ic --log-maps
---log-maps-details --log-code --log-source-code --prof
---log-internal-timer-events --detailed-line-info --logfile=<tmp>
---no-logfile-per-isolate`), honoring category toggles.
+  --log-maps-details --log-code --log-source-code --prof
+  --log-internal-timer-events --detailed-line-info --logfile=<tmp>
+  --no-logfile-per-isolate`), honoring category toggles.
 - Spawn with inherited stdio captured (tail returned in tool result), enforce
   timeout, clean up temp `--redirect-code-traces` artifacts.
 - Hosts: **Node.js only in v1.** The host abstraction (from dexnode) stays so
@@ -232,7 +233,7 @@ annotated snippets, source map support, README + prompt, npm publish dry-run.
 
 > Superseded by [BENCHMARKING.md](./BENCHMARKING.md), which specs the full post-v1 integration plan (harness markers, vitest bench preset, framework driver recipes, and CI gating). The two paragraphs below are the original summary.
 
-**Vitest preset** (`deoptkit/vitest`): V8 logging flags are process-startup flags, and vitest's `pool: "forks"` + `poolOptions.forks.execArgv` injects them into the worker processes that execute tests. The preset configures the fork pool, the flag set, and per-process logfiles in a scratch directory; after the run, sessions load via `load_log`. Requirements and caveats: forks only (threads interleave isolate logs in one file), source-map resolution is a hard prerequisite (vitest executes Vite-transformed code), coverage must be off (instrumentation perturbs optimization), and a timestamp-bracketing helper (`markStart`/`markEnd`) lets analysis window a session to one benchmark block since every log event is timestamped.
+**Vitest preset** (`deoptkit/vitest`): V8 logging flags are process-startup flags, and vitest's `pool: "forks"` + `execArgv` injects them into the worker processes that execute tests. The preset configures the fork pool, the flag set, and per-process logfiles in a scratch directory; after the run, sessions load via `load_log`. Requirements and caveats: forks only (threads interleave isolate logs in one file), source-map resolution is a hard prerequisite (vitest executes Vite-transformed code), coverage must be off (instrumentation perturbs optimization), and a timestamp-bracketing helper (`markStart`/`markEnd`) lets analysis window a session to one benchmark block since every log event is timestamped.
 
 **Wallaby/Quokka: deliberately unsupported for perf.** Their workers accept node flags (`env.params.runner`), but their statement-level instrumentation changes the optimization behavior being measured — function sizes cross inlining thresholds, injected closures alter IC feedback. Correctness feedback and perf truth need different execution contexts; perf runs belong on uninstrumented code via `profile_run`.
 

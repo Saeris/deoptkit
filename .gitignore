@@ -75,6 +75,7 @@ storybook-static/
 .next/
 .cache/
 **/dist/
+**/*.vsix
 coverage/
 **/public/workbox-*.js*
 **/public/sw.js*
@@ -83,6 +84,9 @@ results
 yarn-error.log
 .idea
 .vscode
+!extensions/*/.vscode/
+extensions/*/.vscode/*
+!extensions/*/.vscode/launch.json
 schema.json
 
 cypress/e2e/build
@@ -97,3 +101,8 @@ cypress/e2e/build
 # CPU profiles emitted by scripts/profile.mjs
 profiles/
 *.cpuprofile
+.vitest/
+
+# deoptkit ci output: baselines are committed, the per-run interchange is not
+**/.deopt/*
+!**/.deopt/baselines/

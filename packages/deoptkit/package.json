@@ -1,0 +1,106 @@
+{
+  "name": "deoptkit",
+  "version": "0.1.0",
+  "description": "A V8 deoptimization toolkit for AI agents and dev workflows: MCP server, findings engine, benchmark harness, and fix-verify comparison for inline caches, deopts, and hidden-class churn",
+  "keywords": [
+    "v8",
+    "deoptimization",
+    "deopt",
+    "performance",
+    "profiling",
+    "inline-cache",
+    "hidden-class",
+    "mcp",
+    "modelcontextprotocol",
+    "mcp-server",
+    "benchmark"
+  ],
+  "homepage": "https://github.com/Saeris/deoptkit#readme",
+  "license": "MIT",
+  "author": "Drake Costa <drake@saeris.gg> (https://saeris.gg)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Saeris/deoptkit.git",
+    "directory": "packages/deoptkit"
+  },
+  "files": [
+    "dist/**/*",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "bin": "./dist/main.mjs",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      }
+    },
+    "./harness": {
+      "import": {
+        "types": "./dist/harness.d.mts",
+        "default": "./dist/harness.mjs"
+      }
+    },
+    "./vitest": {
+      "import": {
+        "types": "./dist/vitest.d.mts",
+        "default": "./dist/vitest.mjs"
+      }
+    },
+    "./vitest/global-setup": {
+      "import": {
+        "types": "./dist/vitest-global-setup.d.mts",
+        "default": "./dist/vitest-global-setup.mjs"
+      }
+    },
+    "./bench": {
+      "import": {
+        "types": "./dist/bench.d.mts",
+        "default": "./dist/bench.mjs"
+      }
+    },
+    "./serve": {
+      "import": {
+        "types": "./dist/serve.d.mts",
+        "default": "./dist/serve.mjs"
+      }
+    },
+    "./lsp": {
+      "import": {
+        "types": "./dist/lsp.d.mts",
+        "default": "./dist/lsp.mjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "vitest": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "bench": "node dist/main.mjs ci bench/parse.bench.mjs",
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@valibot/to-json-schema": "^1.8.0",
+    "valibot": "^1.5.0"
+  }
+}

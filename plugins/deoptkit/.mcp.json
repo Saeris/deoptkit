@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "deopt": {
+      "command": "npx",
+      "args": ["-y", "deoptkit@latest"]
+    }
+  }
+}
