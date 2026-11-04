@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { FrameParser, frame } from "../jsonrpc";
 import type { Diagnostic } from "../server";
-import { runLsp, toDiagnostics } from "../server";
+import { parseLspArgs, runLsp, toDiagnostics } from "../server";
 
 describe("jsonrpc framing", () => {
   it("round-trips messages split across arbitrary chunk boundaries", () => {
@@ -68,6 +68,27 @@ describe("toDiagnostics", () => {
     const hot = byUri.get("file:///C:/app/src/x.ts")?.[0];
     expect(hot?.severity).toBe(3);
     expect(hot?.message).toContain("re-run the bench");
+  });
+});
+
+// The VSCode client always appends --stdio and --clientProcessId=<pid>, so rejecting them made the bundled server exit with a usage error on every start and the editor report the server as crashed.
+describe("parseLspArgs", () => {
+  it("accepts the transport flags the language client appends", () => {
+    expect(parseLspArgs(["--stdio", "--clientProcessId=4242"])).toEqual({
+      findingsPath: join(".deopt", "findings.json")
+    });
+  });
+
+  it("keeps --findings working alongside the transport flags", () => {
+    expect(parseLspArgs(["--findings", "x.json", "--stdio"])).toEqual({
+      findingsPath: "x.json"
+    });
+  });
+
+  it("still rejects flags it does not know", () => {
+    expect(parseLspArgs(["--bogus"])).toMatchObject({
+      error: "Unknown flag: --bogus"
+    });
   });
 });
 

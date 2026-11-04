@@ -111,6 +111,8 @@ export const parseLspArgs = (
       const value = args.at(++index);
       if (value === undefined) return { error: "--findings requires a value" };
       findingsPath = value;
+    } else if (arg === "--stdio" || arg.startsWith("--clientProcessId=")) {
+      // vscode-languageclient appends --stdio and --clientProcessId=<pid> when it starts a module server over stdio; stdio is the only transport this server has, and the pid is not used yet.
     } else {
       return { error: `Unknown flag: ${arg}` };
     }

@@ -169,4 +169,6 @@ Verified headlessly:
   }
   ```
 
+- `vscode-languageclient` appends `--stdio` and `--clientProcessId=<pid>` to a module server's arguments, so the replay that matters spawns the server with both flags: with them appended, `node packages/deoptkit/dist/main.mjs lsp --findings <path>` and `node extensions/deoptkit-vscode/dist/server.cjs --findings <path>` both stay up and answer `initialize`. The 0.0.0 build installed before this fix crashed on every activation because the server rejected the flags (`Unknown flag: --stdio`, exit code 2).
+
 Not verified, and left to the maintainer: the in-editor check, which needs a display. Install the vsix with `code --install-extension extensions/deoptkit-vscode/deoptkit-vscode-0.0.0.vsix`, open a workspace whose `.deopt/findings.json` annotates a source file, and confirm that squiggles and Problems entries appear on the annotated lines and that the findings downgrade to Information after editing that file. Also exercise the server selection once each: with `deoptkit` in the workspace's `node_modules`, without it (the bundled server), and with `deoptkit.serverCommand` set.
