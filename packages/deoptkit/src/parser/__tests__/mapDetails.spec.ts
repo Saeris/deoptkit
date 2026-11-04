@@ -160,6 +160,33 @@ describe("parseMapDetails", () => {
     expect(details.unparsedLines).toBe(0);
   });
 
+  // V8 13 (Node 24) prints the header and every string key without the ` in <space>`
+  // part that V8 12 and 14+ print; the Node 24 lanes counted one unparsed line on all
+  // 3,700 maps for the header, then one per string-keyed descriptor and transition.
+  it("reads headers and string keys without a space name, as V8 13 prints them", () => {
+    const details = parseMapDetails(
+      [
+        "0000006114DC1A39: [Map]",
+        " - type: [api object] 0",
+        " - instance size: 32",
+        " - may_have_interesting_properties",
+        " - instance descriptors #62: 0x01aa2fc5d3d1 <Other heap object (STRONG_DESCRIPTOR_ARRAY_TYPE)>",
+        " - transitions #1: 0x006114dc19f1 <Map[32](HOLEY_ELEMENTS)>",
+        "     0000035CEB067FE9: [String]: #chdir: (transition to (const data field, attrs: [WEC]) @ Any) -> 0x006114dc19f1 <Map[32](HOLEY_ELEMENTS)>",
+        " - constructor: 0x006114dc1921 <JSFunction process (sfi = 000002BF2BF8E341)>",
+        "",
+        "  [0]: 0000035CEB0697D9: [String]: #version (const data field 1:h, p: 26, attrs: [_EC]) @ Any"
+      ].join("\n")
+    );
+    expect(details.type).toBe("[api object] 0");
+    expect(details.flags).toEqual(["may_have_interesting_properties"]);
+    expect(details.transitions).toEqual([
+      { name: "chdir", kind: "data", to: "0x006114dc19f1" }
+    ]);
+    expect(details.properties.map(({ name }) => name)).toEqual(["version"]);
+    expect(details.unparsedLines).toBe(0);
+  });
+
   // V8 15.6 (Node 27) prints where a field lives after its representation, and the
   // field's word offset in place of its index; without this every data field was
   // dropped, so get_map on Node 27 showed shapes with no properties.

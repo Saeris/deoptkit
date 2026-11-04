@@ -56,10 +56,12 @@ export interface MapDetails {
 /**
  * The block's first line: `000003D63A387389: [Map] in OldSpace` on Windows, where the C++
  * stream prints a pointer as 16 upper-case digits, `0x3d63a387389: [Map] in OldSpace` on
- * Linux; meta maps print `[MetaMap]`, and V8 15.6 prints maps with interceptors (Node's
- * `process`, the global object) as `[ExtendedMap]`.
+ * Linux; meta maps print `[MetaMap]`, V8 15.6 prints maps with interceptors (Node's
+ * `process`, the global object) as `[ExtendedMap]`, and V8 13 (Node 24) omits the
+ * ` in <space>` suffix.
  */
-const HEADER_RE = /^(?:0x)?[0-9A-Fa-f]+: \[(?:Meta|Extended)?Map\] in \S+$/u;
+const HEADER_RE =
+  /^(?:0x)?[0-9A-Fa-f]+: \[(?:Meta|Extended)?Map\](?: in \S+)?$/u;
 
 /** ` -------`: the rule V8 15.6 prints before an extended map's extra fields. */
 const SECTION_RULE_RE = /^ -+$/u;
@@ -73,10 +75,11 @@ const FLAG_RE = /^ - (?<flag>[\w-]+)$/u;
 /**
  * `  [0]: <addr>: [String] in <space>: #id (<details>) @ Any`, or a `<Symbol: ...>` key.
  * The symbol alternative comes first so a private name (`<Symbol: #compare>`) is not
- * read as a string key named `compare>`.
+ * read as a string key named `compare>`. V8 13 (Node 24) prints `[String]: #id` with
+ * no space name, here and in transition keys.
  */
 const DESCRIPTOR_RE =
-  /^\s*\[(?<index>\d+)\]: .*?(?:<(?:Private)?Symbol: (?<symbol>[^>]*)>|\[String\] in \S+: #(?<name>\S+)) \((?<details>[^)]*)\)(?: @ (?<fieldType>.*))?$/u;
+  /^\s*\[(?<index>\d+)\]: .*?(?:<(?:Private)?Symbol: (?<symbol>[^>]*)>|\[String\](?: in \S+)?: #(?<name>\S+)) \((?<details>[^)]*)\)(?: @ (?<fieldType>.*))?$/u;
 
 /**
  * `const data field 0:s, p: 0, attrs: [WEC]` (PropertyDetails::PrintAsFastTo). V8 15.6
@@ -108,7 +111,7 @@ const TRANSITION_TARGET_RE = /^\s+.* -> (?<to>0x[0-9A-Fa-f]+)\b/u;
 
 /** `<addr>: [String] in OldSpace: #x: (transition to ...)` or `0x... <Symbol: ...>: (transition to ...)`. */
 const TRANSITION_KEY_RE =
-  /^\s+\S+ (?:<(?:Private)?Symbol: (?<symbol>[^>]*)>|\[String\] in \S+: #(?<name>\S+)): \(transition to (?<details>\([^)]*\)|[^)]*)/u;
+  /^\s+\S+ (?:<(?:Private)?Symbol: (?<symbol>[^>]*)>|\[String\](?: in \S+)?: #(?<name>\S+)): \(transition to (?<details>\([^)]*\)|[^)]*)/u;
 
 /** Prototype transitions print the new prototype: `0x... <JSFunction Error (sfi = ...)> -> 0x...`. */
 const PROTOTYPE_ENTRY_RE = /^\s+0x[0-9A-Fa-f]+ <JSFunction (?<name>[^\s(]*)/u;
