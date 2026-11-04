@@ -1,7 +1,7 @@
 {
   "name": "deoptkit-vscode",
   "displayName": "deoptkit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "V8 deoptimization findings from deoptkit (megamorphic inline caches, deopt loops, hidden-class churn) as inline diagnostics",
   "categories": [
     "Linters",
