@@ -1,6 +1,6 @@
 # deoptkit for VSCode
 
-Shows V8 deoptimization findings from [deoptkit](../../packages/deoptkit) (megamorphic inline caches, deopt loops, hidden-class churn) as inline diagnostics: squiggles in the editor and entries in the Problems panel, with the explanation and suggested fix in the hover.
+Shows V8 deoptimization findings from [deoptkit](https://github.com/Saeris/deoptkit/tree/main/packages/deoptkit) (megamorphic inline caches, deopt loops, hidden-class churn) as inline diagnostics: squiggles in the editor and entries in the Problems panel, with the explanation and suggested fix in the hover.
 
 This extension is a thin client. It holds no analysis logic: it starts the `deoptkit lsp` language server and lets VSCode render the diagnostics the server publishes.
 
@@ -8,7 +8,7 @@ This extension is a thin client. It holds no analysis logic: it starts the `deop
 
 The extension displays whatever is in `.deopt/findings.json` in your workspace folder. Produce that file with either of:
 
-- `deoptkit ci <script>` (see [CI regression gating](../../packages/deoptkit/README.md#ci-regression-gating))
+- `deoptkit ci <script>` (see [CI regression gating](https://github.com/Saeris/deoptkit/blob/main/packages/deoptkit/README.md#ci-regression-gating))
 - the `deoptkit/vitest` preset, for example `vitest bench --watch`, which rewrites the file on every run so the squiggles update live
 
 Severity follows the finding score (error at 60 and above, warning at 25 and above, information below). Findings older than the file they annotate are downgraded to information with a re-run hint.
@@ -35,4 +35,4 @@ The bundled and installed servers run on the editor's own Node runtime; nothing 
 - Only the first workspace folder gets a language server (multi-root workspaces are not supported yet).
 - There are no commands, decorations, or CodeLens; the extension only shows diagnostics.
 
-See the [deoptkit README](../../packages/deoptkit/README.md#inline-editor-diagnostics-lsp) for the other editors the server works with.
+See the [deoptkit README](https://github.com/Saeris/deoptkit/blob/main/packages/deoptkit/README.md#inline-editor-diagnostics-lsp) for the other editors the server works with.
