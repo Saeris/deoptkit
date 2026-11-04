@@ -5,6 +5,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { Finding } from "../findings";
 import type { LogModel, Tier } from "../../model/logModel";
 import { generateWorkloadLog } from "../../parser/__tests__/helpers";
+import { parseMapDetails } from "../../parser/mapDetails";
 import { parseLog } from "../../parser/parseLog";
 import { findingIdentity } from "../compare";
 import { computeFindings } from "../findings";
@@ -206,6 +207,8 @@ describe("computeFindings for map churn groups", () => {
     count: 3,
     events: ["a", "b", "c"].map((propertyName, index) => ({
       time: index,
+      subtype: "Transition",
+      reason: undefined,
       propertyName,
       mapAddress: `0x${functionLine}${index}`
     }))
@@ -241,6 +244,220 @@ describe("computeFindings for map churn groups", () => {
     const found = churnFor(...sites);
     expect(found).toHaveLength(1);
     expect(found[0]?.evidence["maxTransitionsPerProperty"]).toBe(3);
+  });
+});
+
+describe("computeFindings for normalization events", () => {
+  const normalizeSite = (
+    events: LogModel["maps"]["transitionSites"][number]["events"]
+  ): LogModel["maps"]["transitionSites"][number] => ({
+    file: "file:///app/src/build.js",
+    functionName: "build",
+    functionLine: 1,
+    functionColumn: 1,
+    line: 3,
+    column: 9,
+    propertyNames: [],
+    count: events.length,
+    events
+  });
+  const normalization = (
+    subtype: string,
+    reason: string,
+    index: number
+  ): LogModel["maps"]["transitionSites"][number]["events"][number] => ({
+    time: index,
+    subtype,
+    reason,
+    propertyName: undefined,
+    mapAddress: "0x9"
+  });
+  const findingsFor = (
+    ...sites: LogModel["maps"]["transitionSites"]
+  ): Finding[] => {
+    const model = modelWith({ ics: [], deopts: [] });
+    return computeFindings({
+      ...model,
+      maps: { ...model.maps, transitionSites: sites }
+    });
+  };
+
+  // The Valimock builder stored each mocked key with `result[key] = value`; past 12
+  // fields V8 normalized every wide mock, and the NormalizedMapCache logged one
+  // `NormalizeCached` event per object at the store. Counted as churn, that read as
+  // "200 map transitions" from conditional property order, advice that could not
+  // fix it; the mechanism had to be confirmed by hand with %HasFastProperties.
+  it("reports objects normalized past the fast-property limit as dictionary-mode, not map churn", () => {
+    const found = findingsFor(
+      normalizeSite(
+        Array.from({ length: 150 }, (_, index) =>
+          normalization("NormalizeCached", "TooManyFastProperties", index)
+        )
+      )
+    );
+    expect(found.map(({ kind }) => kind)).toEqual(["dictionary-mode"]);
+    expect(found[0]?.line).toBe(3);
+    expect(found[0]?.evidence).toMatchObject({
+      count: 150,
+      reasons: ["TooManyFastProperties"]
+    });
+    expect(found[0]?.suggestedFix).toContain("Object.fromEntries");
+  });
+
+  // V8 normalizes prototype objects by design (every class body and Object.create
+  // does it), and Node defines `import.meta`'s accessors at the user's first
+  // `import.meta` access, so reporting those would send an agent to "fix" each
+  // class and every ESM bench that reads import.meta.url.
+  it("ignores the normalizations V8 and the host perform on purpose", () => {
+    const deliberate = [
+      "NormalizeAsPrototype",
+      "NormalizeAndCopyAsPrototype",
+      "Normalize_AttributesMismatchProtoMap",
+      "TransitionToAccessorPair",
+      "JSModuleNamespace"
+    ];
+    expect(
+      findingsFor(
+        normalizeSite(
+          Array.from({ length: 150 }, (_, index) =>
+            normalization(
+              "Normalize",
+              deliberate[index % deliberate.length] ?? "",
+              index
+            )
+          )
+        )
+      )
+    ).toEqual([]);
+  });
+
+  it("reports a delete-driven normalization alongside the keyed-store one", () => {
+    const found = findingsFor(
+      normalizeSite([
+        normalization("NormalizeCached", "DeletingProperty", 0),
+        normalization("NormalizeCached", "TooManyFastProperties", 1)
+      ])
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.evidence["reasons"]).toEqual([
+      "DeletingProperty",
+      "TooManyFastProperties"
+    ]);
+  });
+});
+
+describe("computeFindings classifies IC receivers by map type", () => {
+  const site = (addresses: string[]): LogModel["ics"][number] => ({
+    type: "LoadIC",
+    file: "file:///app/src/hot.js",
+    functionName: "hot",
+    line: 4,
+    column: 12,
+    key: "length",
+    keys: ["length"],
+    distinctKeys: 1,
+    worstState: "megamorphic",
+    transitions: addresses.map((mapAddress, index) => ({
+      time: index,
+      oldState: "polymorphic" as const,
+      newState: "megamorphic" as const,
+      mapAddress
+    }))
+  });
+  const entry = (
+    address: string,
+    type: string,
+    elementsKind?: string
+  ): [
+    string,
+    LogModel["maps"]["entries"] extends Map<string, infer T> ? T : never
+  ] => [
+    address,
+    {
+      address,
+      createdAt: 0,
+      details: { ...parseMapDetails(""), type, elementsKind },
+      parent: undefined,
+      subtype: undefined,
+      propertyName: undefined
+    }
+  ];
+  const findingFor = (
+    addresses: string[],
+    entries: ReturnType<typeof entry>[]
+  ): Finding | undefined => {
+    const model = modelWith({ ics: [site(addresses)], deopts: [] });
+    return computeFindings({
+      ...model,
+      maps: { ...model.maps, entries: new Map(entries) }
+    })[0];
+  };
+  const addresses = ["0x1", "0x2", "0x3", "0x4", "0x5"];
+  const objects = findingFor(
+    addresses,
+    addresses.map((address) => entry(address, "JS_OBJECT_TYPE"))
+  );
+
+  // The jisho pass ranked `endsWith` on strings as the session's top finding, with
+  // advice to align property initialization order. Strings have no properties to
+  // align: V8 picks a map per representation (one-byte, two-byte, cons, sliced),
+  // and the agent wasted its first fix on it.
+  it("names string representation polymorphism and ranks it below object shapes", () => {
+    const strings = findingFor(addresses, [
+      entry("0x1", "SEQ_ONE_BYTE_STRING_TYPE"),
+      entry("0x2", "SEQ_TWO_BYTE_STRING_TYPE"),
+      entry("0x3", "CONS_ONE_BYTE_STRING_TYPE"),
+      entry("0x4", "SLICED_ONE_BYTE_STRING_TYPE"),
+      entry("0x5", "INTERNALIZED_ONE_BYTE_STRING_TYPE")
+    ]);
+    expect(strings?.evidence["receiver"]).toBe("string");
+    expect(strings?.summary).toContain("string representations");
+    expect(strings?.summary).toContain("not object shapes");
+    expect(strings?.severity ?? 0).toBeLessThan(objects?.severity ?? 0);
+    expect(objects?.evidence["receiver"]).toBe("object");
+    expect(objects?.summary).not.toContain("over");
+  });
+
+  // Arrays that differ only by elements kind are fixable, but by keeping each
+  // array's element type uniform, not by property order: the finding must say which.
+  it("names arrays polymorphic over elements kinds and lists the kinds", () => {
+    const arrays = findingFor(addresses, [
+      entry("0x1", "JS_ARRAY_TYPE", "PACKED_SMI_ELEMENTS"),
+      entry("0x2", "JS_ARRAY_TYPE", "PACKED_DOUBLE_ELEMENTS"),
+      entry("0x3", "JS_ARRAY_TYPE", "PACKED_ELEMENTS"),
+      entry("0x4", "JS_ARRAY_TYPE", "HOLEY_SMI_ELEMENTS"),
+      entry("0x5", "JS_ARRAY_TYPE", "HOLEY_ELEMENTS")
+    ]);
+    expect(arrays?.evidence["receiver"]).toBe("array");
+    expect(arrays?.evidence["elementsKinds"]).toEqual([
+      "PACKED_SMI_ELEMENTS",
+      "PACKED_DOUBLE_ELEMENTS",
+      "PACKED_ELEMENTS",
+      "HOLEY_SMI_ELEMENTS",
+      "HOLEY_ELEMENTS"
+    ]);
+    expect(arrays?.summary).toContain("elements kinds");
+    expect(arrays?.severity ?? 0).toBeLessThan(objects?.severity ?? 0);
+    expect(arrays?.severity ?? 0).toBeGreaterThan(
+      findingFor(addresses, [
+        entry("0x1", "SEQ_ONE_BYTE_STRING_TYPE"),
+        entry("0x2", "SEQ_TWO_BYTE_STRING_TYPE")
+      ])?.severity ?? 0
+    );
+  });
+
+  // Arrays polymorphic for any other reason (extra named properties) are shapes,
+  // and a site whose maps were never printed must not be guessed at.
+  it("treats same-kind arrays as object shapes and leaves unprinted maps unclassified", () => {
+    const sameKind = findingFor(addresses, [
+      entry("0x1", "JS_ARRAY_TYPE", "PACKED_ELEMENTS"),
+      entry("0x2", "JS_ARRAY_TYPE", "PACKED_ELEMENTS")
+    ]);
+    expect(sameKind?.evidence["receiver"]).toBe("object");
+    expect(sameKind?.evidence["elementsKinds"]).toBeUndefined();
+    const unprinted = findingFor(addresses, []);
+    expect(unprinted?.evidence["receiver"]).toBeUndefined();
+    expect(unprinted?.severity).toBe(objects?.severity);
   });
 });
 
@@ -298,6 +515,7 @@ describe("computeFindings across the pathology fixtures", () => {
   let megamorphic: Finding[];
   let deoptLoop: Finding[];
   let mapChurn: Finding[];
+  let dictionaryMode: Finding[];
 
   beforeAll(async () => {
     fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-findings-"));
@@ -310,10 +528,57 @@ describe("computeFindings across the pathology fixtures", () => {
     mapChurn = computeFindings(
       await parseLog(generateWorkloadLog("map-churn", fixtureDir))
     );
-  }, 120_000);
+    dictionaryMode = computeFindings(
+      await parseLog(generateWorkloadLog("dictionary-mode", fixtureDir))
+    );
+  }, 180_000);
 
   afterAll(async () => {
     await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  // The real log is the contract: V8 logs the keyed builder's normalizations as
+  // `NormalizeCached` with reason `TooManyFastProperties` at the store, one finding
+  // for the function however many pcs the loop ran under, and never as churn.
+  it("reports the keyed builder of the dictionary-mode fixture once, at its store line", () => {
+    const inBuilder = dictionaryMode.filter(
+      ({ functionName }) => functionName === "buildRecord"
+    );
+    expect(inBuilder.some(({ kind }) => kind === "map-churn")).toBe(false);
+    const normalized = inBuilder.filter(
+      ({ kind }) => kind === "dictionary-mode"
+    );
+    expect(normalized).toHaveLength(1);
+    const [found] = normalized;
+    expect(found?.line).toBe(20);
+    expect(found?.evidence["reasons"]).toEqual(["TooManyFastProperties"]);
+    expect(found?.evidence["count"]).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("classifies the fixture's string and array megamorphism from the printed maps", () => {
+    const endsWith = dictionaryMode.find(
+      ({ evidence }) => evidence["key"] === "endsWith"
+    );
+    expect(endsWith?.kind).toBe("megamorphic-ic");
+    expect(endsWith?.evidence["receiver"]).toBe("string");
+    const types = endsWith?.evidence["receiverTypes"];
+    expect(
+      Array.isArray(types) &&
+        types.every((type) => String(type).endsWith("_STRING_TYPE"))
+    ).toBe(true);
+    const push = dictionaryMode.find(
+      ({ evidence }) => evidence["key"] === "push"
+    );
+    expect(push?.kind).toBe("megamorphic-ic");
+    expect(push?.evidence["receiver"]).toBe("array");
+    const kinds = push?.evidence["elementsKinds"];
+    expect(Array.isArray(kinds) ? kinds.length : 0).toBeGreaterThanOrEqual(2);
+    // Both rank below the dictionary-mode finding, which is the real problem here.
+    const dictionary = dictionaryMode.find(
+      ({ kind }) => kind === "dictionary-mode"
+    );
+    expect(endsWith?.severity ?? 0).toBeLessThan(dictionary?.severity ?? 0);
+    expect(push?.severity ?? 0).toBeLessThan(dictionary?.severity ?? 0);
   });
 
   // The agent workflow starts at findings[0]; if the deliberately-hot megamorphic site

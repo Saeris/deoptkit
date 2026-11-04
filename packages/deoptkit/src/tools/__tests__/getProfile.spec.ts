@@ -11,6 +11,7 @@ interface Node {
   file?: string;
   selfTicks: number;
   totalTicks: number;
+  folded?: { file?: string; selfTicks: number }[];
   children: Node[];
 }
 
@@ -60,6 +61,11 @@ describe("get_profile", () => {
       expect(node.totalTicks).toBeGreaterThanOrEqual(node.selfTicks);
       expect(node.file).toMatch(/megamorphic\.js$/);
       expect(node.file).not.toMatch(/^([A-Za-z]:|\/|file:)/);
+      // Folded frames are presented like nodes: workspace-relative, never a URL.
+      for (const frame of node.folded ?? []) {
+        expect(frame.selfTicks).toBeLessThanOrEqual(node.selfTicks);
+        expect(frame.file ?? "").not.toMatch(/^([A-Za-z]:|\/|file:)/);
+      }
     }
   });
 

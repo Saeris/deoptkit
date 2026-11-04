@@ -109,11 +109,14 @@ describe("sourceMapResolver on a transpiled TypeScript workload", () => {
       { sessions }
     );
     const [first] = result.content as [{ type: "text"; text: string }];
-    const { items } = JSON.parse(first.text) as {
+    const { items, unmapped } = JSON.parse(first.text) as {
       items: { kind: string; original?: { file: string; line: number } }[];
+      unmapped?: unknown;
     };
     const megamorphic = items.find((found) => found.kind === "megamorphic-ic");
     expect(megamorphic?.original?.file.endsWith("app.ts")).toBe(true);
     expect(megamorphic?.original?.line).toBe(TS_LINE_OF_RETURN);
+    // A mapped build must not be reported as unmapped.
+    expect(unmapped).toBeUndefined();
   });
 });

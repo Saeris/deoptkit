@@ -11,6 +11,53 @@ import type { FunctionTicks, LogModel } from "../../model/logModel";
 import { parseLog } from "../../parser/parseLog";
 import { SessionStore } from "../../sessions";
 import { getFindings } from "../../tools/getFindings";
+import { interleaved, observed } from "../index";
+
+describe("interleaved timing", () => {
+  // Back-to-back before/after timings on a shared machine drifted by 30%; the only
+  // numbers worth trusting came from rotating the variants inside one process and
+  // comparing medians, a loop written by hand in three bench scripts before this.
+  it("times every variant for the same rounds and reports medians to compare", () => {
+    const result = interleaved(
+      "a vs b",
+      {
+        fast: (iteration) => iteration,
+        slow: (iteration) => {
+          let sum = 0;
+          for (let step = 0; step < 500; step++) sum += iteration ^ step;
+          return sum;
+        }
+      },
+      { rounds: 3, iterations: 2000 }
+    );
+    expect(result).toMatchObject({
+      label: "a_vs_b",
+      startMark: "a_vs_b_start",
+      endMark: "a_vs_b_end",
+      rounds: 3,
+      iterations: 2000
+    });
+    expect(Object.keys(result.variants)).toEqual(["fast", "slow"]);
+    for (const timing of Object.values(result.variants)) {
+      expect(timing.roundsMs).toHaveLength(3);
+      expect(timing.medianMs).toBeGreaterThanOrEqual(timing.minMs);
+      expect(timing.medianMs).toBe(
+        timing.roundsMs.toSorted((a, b) => a - b)[1]
+      );
+    }
+    expect(result.variants["slow"]?.medianMs ?? 0).toBeGreaterThan(
+      result.variants["fast"]?.medianMs ?? Infinity
+    );
+  });
+
+  it("reports how long an observed loop took", () => {
+    const result = observed("timed", (iteration) => iteration, {
+      iterations: 100
+    });
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(result.lastResult).toBe(99);
+  });
+});
 
 // Two observed cases: hot_mega drives a LoadIC megamorphic with 8 shapes; clean reads
 // one shape monomorphically. Windowing must attribute the pathology to hot_mega only.

@@ -65,6 +65,18 @@ describe("get_findings", () => {
     }
   });
 
+  // jisho's bench built its bundle without a map; findings came back without
+  // `original` and nothing said why, so the first edits went into the bundle.
+  it("lists the files on the page that have no source map", async () => {
+    const payload = payloadOf(
+      await getFindings.invoke({ sessionId: "s1" }, { sessions })
+    );
+    const unmapped = payload["unmapped"] as { files: string[]; note: string };
+    expect(unmapped.files).toHaveLength(1);
+    expect(unmapped.files[0]).toMatch(/map-churn\.js$/);
+    expect(unmapped.note).toContain("source map");
+  });
+
   it("names the unknown session instead of silently ranking the rest", async () => {
     const result = await getFindings.invoke(
       { sessionIds: ["s1", "nope"] },

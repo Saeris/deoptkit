@@ -71,6 +71,20 @@ export class SourceMapResolver {
     }
   }
 
+  #mapFor(file: string): TraceMap | null {
+    let map = this.#cache.get(file);
+    if (map === undefined) {
+      map = this.#loadMap(file);
+      this.#cache.set(file, map);
+    }
+    return map;
+  }
+
+  /** Whether the script carries a usable source map at all. */
+  hasMap(file: string): boolean {
+    return this.#mapFor(file) !== null;
+  }
+
   /** Map a generated (1-based line/column) position back to its original source. */
   resolve(
     file: string | undefined,
@@ -78,11 +92,7 @@ export class SourceMapResolver {
     column: number
   ): OriginalPosition | undefined {
     if (file === undefined) return undefined;
-    let map = this.#cache.get(file);
-    if (map === undefined) {
-      map = this.#loadMap(file);
-      this.#cache.set(file, map);
-    }
+    const map = this.#mapFor(file);
     if (map === null) return undefined;
     // trace-mapping expects 1-based lines and 0-based columns.
     const position = originalPositionFor(map, {

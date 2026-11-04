@@ -152,6 +152,59 @@ describe("sessionQuality", () => {
     expect(codes(quality)).toEqual(["no-ticks"]);
   });
 
+  const samplesEvery = (
+    intervalMs: number,
+    count: number
+  ): LogModel["profile"]["samples"] =>
+    Array.from({ length: count }, (_, index) => ({
+      time: index * intervalMs * 1000,
+      vmState: "js",
+      self: undefined,
+      onStack: [],
+      frames: []
+    }));
+
+  // A remark workload took 158 s under full logging and produced 294 ticks; the
+  // call tree built from them pointed at the wrong plugin until a profile-only run
+  // sampled every 17 ms. The session has to say its ticks are too few to rank by.
+  it("warns sparse-ticks when the sampler fell far behind, naming the profile-only pass", () => {
+    const quality = sessionQuality(
+      model({
+        functionIndex: [fn("hot", ["turbofan"])],
+        ics: [icSite()],
+        profile: {
+          tickCount: 4,
+          vmStates: { js: 4 },
+          functions: [tickRow("hot", 4)],
+          samples: samplesEvery(500, 4)
+        }
+      })
+    );
+    expect(codes(quality)).toEqual(["sparse-ticks"]);
+    expect(quality.tickIntervalMs).toBe(500);
+    expect(quality.warnings[0]?.message).toContain('categories: ["profile"]');
+    expect(quality.warnings[0]?.message).toContain("4 ticks");
+  });
+
+  // Windows samples every 15 ms or so when the sampler keeps up; that must read as
+  // healthy or the warning fires on every Windows run.
+  it("accepts the platform's normal sampling interval", () => {
+    const quality = sessionQuality(
+      model({
+        functionIndex: [fn("hot", ["turbofan"])],
+        ics: [icSite()],
+        profile: {
+          tickCount: 40,
+          vmStates: { js: 40 },
+          functions: [tickRow("hot", 40)],
+          samples: samplesEvery(15, 40)
+        }
+      })
+    );
+    expect(quality.warnings).toEqual([]);
+    expect(quality.tickIntervalMs).toBe(15);
+  });
+
   it("orders warnings no-user-code, cold, no-ticks when several apply", () => {
     expect(codes(sessionQuality(model()))).toEqual([
       "no-user-code",

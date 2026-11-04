@@ -88,6 +88,10 @@ describe("parseLog on a real generated V8 log", () => {
     );
     expect(site).toBeDefined();
     expect(site?.count).toBeGreaterThanOrEqual(8);
+    // Each event keeps V8's subtype, so normalizations can be told from transitions.
+    expect(site?.events.every(({ subtype }) => subtype === "Transition")).toBe(
+      true
+    );
   });
 
   // The megamorphic IC's observed maps must resolve to parsed map entries — this

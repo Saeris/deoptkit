@@ -68,14 +68,15 @@ export const parseCiArgs = (args: string[]): CiOptions | { error: string } => {
 };
 
 /**
- * Only run-stable finding kinds participate in gating: IC states and map churn are
- * deterministic given the same inputs, and deopt loops survive OSR filtering. One-off
+ * Only run-stable finding kinds participate in gating: IC states, map churn and
+ * normalization are deterministic given the same inputs, and deopt loops survive OSR filtering. One-off
  * eager/soft deopts depend on tier-up timing and would flake the gate — they still
  * appear in findings.json for humans and agents.
  */
 const GATED_KINDS = new Set<string>([
   "megamorphic-ic",
   "map-churn",
+  "dictionary-mode",
   "deopt-loop"
 ]);
 

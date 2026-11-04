@@ -140,6 +140,10 @@ export interface MapEntry {
 
 export interface MapTransitionEvent {
   time: number;
+  /** `map` event subtype: Transition, Normalize, NormalizeCached, ReplaceDescriptors, ... */
+  subtype: string;
+  /** V8's reason for the event, when it logged one (`TooManyFastProperties` for a normalization). */
+  reason: string | undefined;
   propertyName: string | undefined;
   /** The map the transition produced (`to`), for get_map. */
   mapAddress: string;
