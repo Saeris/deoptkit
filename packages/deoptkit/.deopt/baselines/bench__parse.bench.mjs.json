@@ -71,6 +71,13 @@
       "file": "src/parser/logReader.ts",
       "functionName": "readLog",
       "summary": "KeyedLoadIC at a dynamic-key site went megamorphic (2 recorded transitions over 2 distinct keys, e.g. \"shared-library\", \"shared-library-end\") — often inherent to generic dispatch"
+    },
+    {
+      "identity": "deopt-loop|src/parser/parseLog.ts|functionKey|wrong map",
+      "kind": "deopt-loop",
+      "file": "src/parser/parseLog.ts",
+      "functionName": "functionKey",
+      "summary": "2 eager deopts at the same position (wrong map)"
     }
   ]
 }
