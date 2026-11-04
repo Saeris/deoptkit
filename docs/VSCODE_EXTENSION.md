@@ -130,7 +130,7 @@ What would change the recommendation:
 
 1. Publisher id: `saeris`, as in mirrordown?
 2. Extension name and display name. Under A or B the `name` cannot be `deoptkit` (Yarn's duplicate-workspace check), so something like `deoptkit-vscode` (marketplace id `saeris.deoptkit-vscode`); under C, `deoptkit` is possible.
-3. Minimum VSCode version: reuse mirrordown's `engines.vscode: ^1.125.0`, or go lower for reach? If a bundled server runs on the editor's own Node runtime rather than the user's `node`, that runtime must also satisfy `deoptkit`'s `engines.node: >=22`.
+3. Minimum VSCode version: reuse mirrordown's `engines.vscode: ^1.125.0`, or go lower for reach? If a bundled server runs on the editor's own Node runtime rather than the user's `node`, that runtime must also satisfy `deoptkit`'s `engines.node: >=24`.
 4. Bundle the server, require a workspace install, or both (prefer the workspace bin when present, fall back to the bundled server)? This sets the `deoptkit.serverCommand` default and is the answer most likely to change the recommendation.
 5. Should the client later offer a "run bench" command, and if so what does it run (`vitest bench`, `deoptkit ci <script>`)?
 6. Multi-root workspaces: one server per workspace folder, each with its own `findings.json`, or only the first folder?

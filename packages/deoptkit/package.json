@@ -95,7 +95,7 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "dependencies": {
     "@jridgewell/trace-mapping": "^0.3.31",
