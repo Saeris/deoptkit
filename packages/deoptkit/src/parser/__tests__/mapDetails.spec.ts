@@ -142,6 +142,79 @@ describe("parseMapDetails", () => {
     expect(details.unparsedLines).toBe(0);
   });
 
+  // Linux prints the header's address as `0x` plus lower-case hex (the C++ stream's
+  // pointer format), Windows as 16 upper-case digits. A header the parser rejects counts
+  // as one unparsed line on every map, which is what the Ubuntu CI lanes reported.
+  it("reads the header as Linux prints it", () => {
+    const details = parseMapDetails(
+      [
+        "0x9221be4cc1: [Map] in OldSpace",
+        " - type: JS_OBJECT_TYPE",
+        " - instance size: 32",
+        "",
+        "  [0]: 0x53500485819: [String] in ReadOnlySpace: #x (const data field 0:s, p: 0, attrs: [WEC]) @ Any"
+      ].join("\n")
+    );
+    expect(details.type).toBe("JS_OBJECT_TYPE");
+    expect(details.properties.map(({ name }) => name)).toEqual(["x"]);
+    expect(details.unparsedLines).toBe(0);
+  });
+
+  // V8 15.6 (Node 27) prints where a field lives after its representation, and the
+  // field's word offset in place of its index; without this every data field was
+  // dropped, so get_map on Node 27 showed shapes with no properties.
+  it("reads the field storage V8 15.6 prints after the representation", () => {
+    const details = parseMapDetails(
+      [
+        "000000C3A2AE0121: [Map] in ReadOnlySpace",
+        " - type: JS_SHARED_ARRAY_TYPE",
+        " - instance descriptors (own) #2: 0x00c3a2ae0169 <DescriptorArray[2]>",
+        "",
+        "  [0]: 000002A0260C1969: [String] in ReadOnlySpace: #length (const data field 3:s, in-obj, p: 0, attrs: [___]) @ Any",
+        "  [1]: 0x02a0260c87c9 <Symbol: (native_context_index_symbol)> (const data field 2:s, ooo, p: 0, attrs: [W_C]) @ Any"
+      ].join("\n")
+    );
+    expect(
+      details.properties.map(({ name, fieldIndex, representation }) => ({
+        name,
+        fieldIndex,
+        representation
+      }))
+    ).toEqual([
+      { name: "length", fieldIndex: 3, representation: "smi" },
+      {
+        name: "Symbol((native_context_index_symbol))",
+        fieldIndex: 2,
+        representation: "smi"
+      }
+    ]);
+    expect(details.unparsedLines).toBe(0);
+  });
+
+  // V8 15.6 prints a map with interceptors (Node's `process`, the global object) as an
+  // `[ExtendedMap]` with a ` -------` rule before its extra fields; 363 maps per Node 27
+  // fixture log, each counting two unparsed lines before this.
+  it("reads an extended map's header and section rule", () => {
+    const details = parseMapDetails(
+      [
+        "000002988CC44EF1: [ExtendedMap] in OldSpace",
+        " - type: [api object] 0",
+        " - instance size: 32",
+        " - back pointer: 0x01a0ca880011 <undefined>",
+        " - instance descriptors (own) #0: 0x01a0ca880e61 <DescriptorArray[0]>",
+        " - constructor: 0x02988cc44eb1 <JSFunction process (sfi = 0000032767B23649)>",
+        " -------",
+        " - extended map kind: JSInterceptorMap",
+        " - extended map size: 104",
+        " - named_interceptor: 0x025e67aa0229 <Other heap object (INTERCEPTOR_INFO_TYPE)>"
+      ].join("\n")
+    );
+    expect(details.type).toBe("[api object] 0");
+    expect(details.constructorName).toBe("process");
+    expect(details.descriptorCount).toBe(0);
+    expect(details.unparsedLines).toBe(0);
+  });
+
   // A line V8 adds in a future version must not abort the block or vanish: the rest
   // still parses, and the count is what the fixture test watches.
   it("counts a line it does not understand and still parses the rest", () => {

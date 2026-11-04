@@ -7,6 +7,7 @@ export interface MapProperty {
   /** `field` (stored in the object) or `descriptor` (stored in the map). */
   location: "field" | "descriptor";
   constant: boolean;
+  /** The number after `field`: the field index before V8 15.6, its word offset from then on. */
   fieldIndex: number | undefined;
   representation:
     | "smi"
@@ -52,8 +53,16 @@ export interface MapDetails {
   unparsedLines: number;
 }
 
-/** `000003D63A387389: [Map] in OldSpace` — the block's first line; meta maps print `[MetaMap]`. */
-const HEADER_RE = /^[0-9A-Fa-f]+: \[(?:Meta)?Map\] in \S+$/u;
+/**
+ * The block's first line: `000003D63A387389: [Map] in OldSpace` on Windows, where the C++
+ * stream prints a pointer as 16 upper-case digits, `0x3d63a387389: [Map] in OldSpace` on
+ * Linux; meta maps print `[MetaMap]`, and V8 15.6 prints maps with interceptors (Node's
+ * `process`, the global object) as `[ExtendedMap]`.
+ */
+const HEADER_RE = /^(?:0x)?[0-9A-Fa-f]+: \[(?:Meta|Extended)?Map\] in \S+$/u;
+
+/** ` -------`: the rule V8 15.6 prints before an extended map's extra fields. */
+const SECTION_RULE_RE = /^ -+$/u;
 
 /** ` - instance size: 32` and the other keyed header lines. */
 const KEY_VALUE_RE = /^ - (?<key>[^:]+): ?(?<value>.*)$/u;
@@ -69,9 +78,12 @@ const FLAG_RE = /^ - (?<flag>[\w-]+)$/u;
 const DESCRIPTOR_RE =
   /^\s*\[(?<index>\d+)\]: .*?(?:<(?:Private)?Symbol: (?<symbol>[^>]*)>|\[String\] in \S+: #(?<name>\S+)) \((?<details>[^)]*)\)(?: @ (?<fieldType>.*))?$/u;
 
-/** `const data field 0:s, p: 0, attrs: [WEC]` (PropertyDetails::PrintAsFastTo). */
+/**
+ * `const data field 0:s, p: 0, attrs: [WEC]` (PropertyDetails::PrintAsFastTo). V8 15.6
+ * (Node 27) adds where the field lives, `in-obj` or `ooo`, after the representation.
+ */
 const PROPERTY_DETAILS_RE =
-  /^(?<constant>const )?(?<form>data field|data descriptor|accessor descriptor|accessor)(?: (?<fieldIndex>\d+))?(?::(?<representation>[a-z]))?(?:, p: \d+)?, attrs: \[(?<attrs>[W_][E_][C_])\]$/u;
+  /^(?<constant>const )?(?<form>data field|data descriptor|accessor descriptor|accessor)(?: (?<fieldIndex>\d+))?(?::(?<representation>[a-z]))?(?:, (?:in-obj|ooo))?(?:, p: \d+)?, attrs: \[(?<attrs>[W_][E_][C_])\]$/u;
 
 /** `0x027727b2aa51 <Map[32](HOLEY_ELEMENTS)>`: an address and V8's short print of it. */
 const REFERENCE_RE = /^(?<address>\S+) <(?<print>.*)>$/u;
@@ -201,7 +213,7 @@ export const parseMapDetails = (text: string): MapDetails => {
       inTransitions = false;
       continue;
     }
-    if (HEADER_RE.test(line)) continue;
+    if (HEADER_RE.test(line) || SECTION_RULE_RE.test(line)) continue;
 
     const keyed = KEY_VALUE_RE.exec(line)?.groups;
     if (keyed !== undefined) {

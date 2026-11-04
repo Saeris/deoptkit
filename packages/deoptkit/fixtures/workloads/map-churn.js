@@ -4,8 +4,13 @@
 // the pathology behind the TypeScript team's 30-maps-for-Symbol fix.
 
 function makeRecord(i) {
-  const record = { id: i };
+  // `id` goes in after the conditional `even`, so it is not at the same slot in every
+  // shape: V8 15.6+ keeps a load homomorphic (one shared handler, no megamorphic
+  // fallback) when every shape stores the field at one slot, and readId's read has to
+  // go megamorphic on every V8 this fixture runs under.
+  const record = {};
   if (i % 2 === 0) record.even = true;
+  record.id = i;
   if (i % 3 === 0) record.third = i / 3;
   if (i % 5 === 0) record.fifth = `${i}`;
   if (i % 7 === 0) record.seventh = [i];

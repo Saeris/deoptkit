@@ -9,13 +9,18 @@ export const IC_STATES = [
   "monomorphic",
   "recompute_handler",
   "polymorphic",
+  "homomorphic",
   "megamorphic",
   "generic"
 ] as const;
 
 export type IcState = (typeof IC_STATES)[number];
 
-/** Single-character state codes emitted by V8's IC tracing (ic-inl.h TransitionMarkFromState). */
+/**
+ * Single-character state codes emitted by V8's IC tracing (ic.cc TransitionMarkFromState).
+ * `H` is V8 15.6's HOMOMORPHIC: many receiver maps that all load the field from the same
+ * slot share one handler, so the site has not fallen back to the megamorphic cache.
+ */
 const IC_STATE_CODES: Record<string, IcState> = {
   X: "no_feedback",
   "0": "uninitialized",
@@ -23,6 +28,7 @@ const IC_STATE_CODES: Record<string, IcState> = {
   "1": "monomorphic",
   "^": "recompute_handler",
   P: "polymorphic",
+  H: "homomorphic",
   N: "megamorphic",
   G: "generic"
 };

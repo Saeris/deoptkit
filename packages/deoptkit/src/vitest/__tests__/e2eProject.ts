@@ -130,6 +130,9 @@ export const createE2eProject = async (
           join(VITEST_DIR, "vitest.mjs"),
           "bench",
           "--run",
+          // Vitest colors its output whenever CI is in the environment (GitHub Actions
+          // sets it); the tests match the plain `Test Files  1 passed` summary.
+          "--no-color",
           "--config",
           configPath
         ],

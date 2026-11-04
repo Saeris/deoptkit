@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { LogModel } from "../../model/logModel";
+import { icStateRank } from "../../model/logModel";
 import { normalizeScriptUrl, parseDeoptLocation, parseLog } from "../parseLog";
 import { generateWorkloadLog } from "./helpers";
 
@@ -153,9 +154,10 @@ describe("parseLog on a real generated V8 log", () => {
 
   // The real flag set must keep producing the tables, or every attribution silently
   // degrades to the caller: inlined ICs, ticks, and map transitions land on the function
-  // V8 inlined them into. Node 26 writes 49 tables for this workload.
+  // V8 inlined them into. The count follows inlining decisions: 33 (Node 26 on Linux)
+  // to 119 (Node 22 on Windows) tables for this workload.
   it("decodes the code-source-info tables the real flag set produces", () => {
-    expect(model.codeSourceInfoCount).toBeGreaterThan(40);
+    expect(model.codeSourceInfoCount).toBeGreaterThan(10);
     expect(Object.keys(model.warnings.unknownCommands)).not.toContain(
       "code-source-info"
     );
@@ -634,5 +636,51 @@ describe("parseLog strips per-process symbol hashes", () => {
     expect(model.maps.entries.get("0x9004")?.propertyName).toBe(
       "Symbol(#lineStarts)"
     );
+  });
+});
+
+describe("parseLog reads the homomorphic IC state", () => {
+  let fixtureDir: string;
+  let model: LogModel;
+
+  // V8 15.6 (Node 27) adds HOMOMORPHIC, logged as `H`: many receiver maps that all load
+  // the field from the same slot share one handler instead of going megamorphic. An
+  // unknown code made the IC handler throw, so the transition was counted as a bad line
+  // and the site kept reporting the state it had before.
+  beforeAll(async () => {
+    fixtureDir = await mkdtemp(join(tmpdir(), "deoptkit-parse-homomorphic-"));
+    const path = join(fixtureDir, "homomorphic.v8.log");
+    await writeFile(
+      path,
+      [
+        "v8-version,15,6,0,0,-node.0,0",
+        "script-source,7,file:///app/s.js,const f = (o) => o.id;\n",
+        "code-creation,JS,10,1000,0x1000,64,f file:///app/s.js:1:11,0x7001,~",
+        "LoadIC,0x1010,2000,1,20,0,1,0x9001,id,,",
+        "LoadIC,0x1010,2100,1,20,1,P,0x9002,id,,",
+        "LoadIC,0x1010,2200,1,20,P,H,0x9003,id,,",
+        ""
+      ].join("\n")
+    );
+    model = await parseLog(path);
+  });
+
+  afterAll(async () => {
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  it("ranks homomorphic between polymorphic and megamorphic without a bad line", () => {
+    expect(model.warnings.badLines).toBe(0);
+    const [site] = model.ics;
+    expect(site?.worstState).toBe("homomorphic");
+    expect(site?.transitions.map(({ newState }) => newState)).toEqual([
+      "monomorphic",
+      "polymorphic",
+      "homomorphic"
+    ]);
+    expect(icStateRank("homomorphic")).toBeGreaterThan(
+      icStateRank("polymorphic")
+    );
+    expect(icStateRank("homomorphic")).toBeLessThan(icStateRank("megamorphic"));
   });
 });
