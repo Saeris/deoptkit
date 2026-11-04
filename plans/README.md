@@ -30,7 +30,7 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 | 020  | One keyed IC site per position; "Insufficient type feedback" deopts classified as soft                                                   | P1       | M      | 015           | DONE                                                                                                         |
 | 021  | Commit the parser `deoptkit ci` baseline and enable the CI gate (plan 018, part 2)                                                       | P2       | S      | 018, 020      | DONE                                                                                                         |
 | 022  | Stable finding identities (symbol hashes, per-function churn groups, tier-aware deopt loops) and shape-stable parser hot paths           | P1       | M      | 014, 016, 020 | DONE                                                                                                         |
-| 023  | `deoptkit lsp` accepts the `--stdio` and `--clientProcessId` flags vscode-languageclient appends (extension crashed on every activation) | P0       | S      | 009           | TODO                                                                                                         |
+| 023  | `deoptkit lsp` accepts the `--stdio` and `--clientProcessId` flags vscode-languageclient appends (extension crashed on every activation) | P0       | S      | 009           | DONE                                                                                                         |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
