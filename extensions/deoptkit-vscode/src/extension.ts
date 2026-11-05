@@ -60,12 +60,16 @@ const serverFor = (
   };
 };
 
-export const activate = async (
+const isEnabled = (): boolean =>
+  vscode.workspace.getConfiguration("deoptkit").get<boolean>("enable") ?? true;
+
+const start = async (
+  folder: vscode.WorkspaceFolder,
   context: vscode.ExtensionContext
 ): Promise<void> => {
-  // Thin client: one server for the first workspace folder (memo decision 6).
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (folder === undefined) return;
+  if (client !== undefined) return;
+  // A fresh client per start: stopping one disposes its transport, so a restart
+  // after a toggle spawns a new server rather than reviving the old process.
   client = new LanguageClient(
     "deoptkit",
     "deoptkit",
@@ -77,8 +81,53 @@ export const activate = async (
       }))
     }
   );
-  context.subscriptions.push(client);
   await client.start();
 };
 
-export const deactivate = (): Thenable<void> | undefined => client?.stop();
+/** Stopping the client also clears every diagnostic it published. */
+const stop = async (): Promise<void> => {
+  const running = client;
+  client = undefined;
+  await running?.stop();
+};
+
+export const activate = async (
+  context: vscode.ExtensionContext
+): Promise<void> => {
+  // Thin client: one server for the first workspace folder (memo decision 6).
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  context.subscriptions.push(
+    // The toggle writes the setting rather than flipping private state, so the
+    // choice survives a reload and shows up in the settings UI. It is scoped to
+    // the workspace, like the server, so silencing one project leaves the rest.
+    vscode.commands.registerCommand("deoptkit.toggle", async () => {
+      const config = vscode.workspace.getConfiguration("deoptkit");
+      const next = !(config.get<boolean>("enable") ?? true);
+      await config.update(
+        "enable",
+        next,
+        folder === undefined
+          ? vscode.ConfigurationTarget.Global
+          : vscode.ConfigurationTarget.Workspace
+      );
+      vscode.window.setStatusBarMessage(
+        `deoptkit: ${next ? "enabled" : "disabled"}`,
+        3000
+      );
+    }),
+    vscode.workspace.onDidChangeConfiguration(async (event) => {
+      if (
+        !event.affectsConfiguration("deoptkit.enable") ||
+        folder === undefined
+      )
+        return;
+      if (isEnabled()) await start(folder, context);
+      else await stop();
+    }),
+    { dispose: () => void stop() }
+  );
+  if (folder !== undefined && isEnabled()) await start(folder, context);
+};
+
+export const deactivate = (): Thenable<void> | undefined =>
+  client === undefined ? undefined : stop();

@@ -69,6 +69,60 @@ describe("toDiagnostics", () => {
     expect(hot?.severity).toBe(3);
     expect(hot?.message).toContain("re-run the bench");
   });
+
+  it("publishes baselined and cold findings as hints, which stay out of the Problems panel", () => {
+    // A high score alone is not a reason to interrupt: a finding the committed
+    // baseline already accepts cannot fail the gate, and one in code the profiler
+    // never sampled cost no time however many transitions it recorded. Both stay
+    // readable in the hover as hints instead of filling the Problems panel.
+    const base = {
+      kind: "megamorphic-ic",
+      severity: 80,
+      line: 3,
+      column: 9,
+      summary: "same site"
+    };
+    const byUri = toDiagnostics(
+      {
+        createdAt: payload.createdAt,
+        findings: [
+          {
+            ...base,
+            file: "file:///C:/app/dist/accepted.js",
+            baselined: true,
+            heat: 0.4
+          },
+          { ...base, file: "file:///C:/app/dist/cold.js", heat: 0 },
+          { ...base, file: "file:///C:/app/dist/hot.js", heat: 0.4 },
+          { ...base, file: "file:///C:/app/dist/legacy.js" }
+        ]
+      },
+      () => false
+    );
+    const accepted = byUri.get("file:///C:/app/dist/accepted.js")?.[0];
+    expect(accepted?.severity).toBe(4);
+    expect(accepted?.message).toContain("baselined");
+    const cold = byUri.get("file:///C:/app/dist/cold.js")?.[0];
+    expect(cold?.severity).toBe(4);
+    expect(cold?.message).toContain("cold");
+    expect(byUri.get("file:///C:/app/dist/hot.js")?.[0]?.severity).toBe(1);
+    // Interchange written before heat and baselined existed is not demoted.
+    expect(byUri.get("file:///C:/app/dist/legacy.js")?.[0]?.severity).toBe(1);
+  });
+
+  it("keeps a stale baselined finding a hint", () => {
+    const byUri = toDiagnostics(
+      {
+        createdAt: payload.createdAt,
+        findings: [{ ...payload.findings[0], baselined: true }]
+      },
+      () => true
+    );
+    const hint = byUri.get("file:///C:/app/src/x.ts")?.[0];
+    expect(hint?.severity).toBe(4);
+    expect(hint?.message).toContain("baselined");
+    expect(hint?.message).toContain("re-run the bench");
+  });
 });
 
 // The VSCode client always appends --stdio and --clientProcessId=<pid>, so rejecting them made the bundled server exit with a usage error on every start and the editor report the server as crashed.

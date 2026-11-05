@@ -13,6 +13,13 @@ export interface Finding {
   kind: FindingKind;
   /** 1-100; computed from signal weight x occurrence count x enclosing-function heat. */
   severity: number;
+  /**
+   * The share (0-1) of all profile self ticks that the enclosing function or its
+   * file took: the heat the severity was scored with. 0 means the profiler never
+   * sampled this code, so the finding cost no time in this run, however many
+   * transitions it recorded.
+   */
+  heat: number;
   file: string;
   line: number;
   column: number;
@@ -253,10 +260,12 @@ const finding = (
   },
   summary: string,
   severity: number,
+  heat: number,
   evidence: Record<string, unknown>
 ): Finding => ({
   kind,
   severity,
+  heat: Math.round(heat * 10_000) / 10_000,
   file: site.file,
   line: site.line,
   column: site.column,
@@ -343,6 +352,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
             heat,
             (keyed ? KEYED_IC_DISCOUNT : 1) * receiverDiscount
           ),
+          heat,
           keyed
             ? {
                 icType: site.type,
@@ -374,6 +384,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
             ? `${site.type} at a dynamic-key site (${site.distinctKeys} distinct keys, e.g. ${exampleKeys}) is polymorphic inside a hot function${clause}`
             : `${site.type} for property "${site.key}" is polymorphic inside a hot function${clause}`,
           score("polymorphic-ic", hits, heat, receiverDiscount),
+          heat,
           keyed
             ? {
                 icType: site.type,
@@ -443,6 +454,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
           site,
           `${hard.length} eager deopts at the same position (${reasons.join("; ")})`,
           score("deopt-loop", hard.length, heat),
+          heat,
           {
             kind: site.kind,
             count: hard.length,
@@ -462,6 +474,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
             ? `Eager deopt: ${reasons.join("; ")}`
             : `${hard.length} eager deopts, one per tier (${reasons.join("; ")})`,
           score("eager-deopt", hard.length, heat),
+          heat,
           {
             kind: site.kind,
             count: hard.length,
@@ -480,6 +493,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
           site,
           `Soft deopt (insufficient type feedback): ${reasons.join("; ")}`,
           score("soft-deopt", feedback.length, heat),
+          heat,
           {
             kind: site.kind,
             count: feedback.length,
@@ -500,6 +514,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
           site,
           `Soft deopt: ${reasons.join("; ")}`,
           score("soft-deopt", count, heat),
+          heat,
           { kind: site.kind, count, reasons, inlinedCount: site.inlinedCount }
         )
       );
@@ -611,6 +626,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
 
   for (const group of normalizeGroups.values()) {
     const reasons = group.reasons.toSorted();
+    const heat = heatOf(group.functionName, group.file);
     findings.push(
       finding(
         "dictionary-mode",
@@ -621,11 +637,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
           functionName: group.functionName
         },
         `${group.count} objects left fast-properties mode here (${reasons.join("; ")})`,
-        score(
-          "dictionary-mode",
-          group.count,
-          heatOf(group.functionName, group.file)
-        ),
+        score("dictionary-mode", group.count, heat),
+        heat,
         { count: group.count, reasons, exampleMaps: group.exampleMaps }
       )
     );
@@ -648,6 +661,7 @@ export const computeFindings = (model: LogModel): Finding[] => {
       group.count < CHURN_VOLUME_THRESHOLD
     )
       continue;
+    const heat = heatOf(group.functionName, group.file);
     findings.push(
       finding(
         "map-churn",
@@ -662,7 +676,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
           .join(
             ", "
           )}${group.propertyNames.length > 8 ? `, … +${group.propertyNames.length - 8} more` : ""})`,
-        score("map-churn", group.count, heatOf(group.functionName, group.file)),
+        score("map-churn", group.count, heat),
+        heat,
         {
           transitionCount: group.count,
           propertyNames: group.propertyNames,

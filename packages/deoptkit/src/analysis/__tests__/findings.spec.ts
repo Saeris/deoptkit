@@ -10,6 +10,70 @@ import { parseLog } from "../../parser/parseLog";
 import { findingIdentity } from "../compare";
 import { computeFindings } from "../findings";
 
+describe("finding heat", () => {
+  it("reports the heat each severity was scored with, zero when the profiler never sampled the code", () => {
+    // Editors and agents need to tell a finding that cost time from one that
+    // merely recorded many transitions in code the profiler never saw; the
+    // score blends both, so the heat it used travels with the finding.
+    const site: LogModel["ics"][number] = {
+      type: "LoadIC",
+      file: "file:///app/src/hot.js",
+      functionName: "dispatch",
+      line: 10,
+      column: 5,
+      key: "name",
+      keys: ["name"],
+      distinctKeys: 1,
+      worstState: "megamorphic",
+      transitions: Array.from({ length: 6 }, (_, index) => ({
+        time: index,
+        oldState: "polymorphic" as const,
+        newState: "megamorphic" as const,
+        mapAddress: "0x1"
+      }))
+    };
+    const model: LogModel = {
+      v8Version: "14.0.0",
+      ics: [site],
+      deopts: [],
+      maps: {
+        createdCount: 0,
+        entries: new Map(),
+        eventCounts: {},
+        transitionSites: []
+      },
+      profile: { tickCount: 0, vmStates: {}, functions: [], samples: [] },
+      scripts: new Map(),
+      functionIndex: [],
+      markers: [],
+      codeEntryCount: 0,
+      codeSourceInfoCount: 0,
+      warnings: { unknownCommands: {}, badLines: 0 }
+    };
+    const [cold] = computeFindings(model);
+    expect(cold?.heat).toBe(0);
+
+    model.profile = {
+      tickCount: 10,
+      vmStates: {},
+      functions: [
+        {
+          functionName: "dispatch",
+          file: "file:///app/src/hot.js",
+          line: 10,
+          column: 5,
+          selfTicks: 10,
+          totalTicks: 10
+        }
+      ],
+      samples: []
+    };
+    const [hot] = computeFindings(model);
+    expect(hot?.heat).toBe(1);
+    expect(hot?.severity ?? 0).toBeGreaterThan(cold?.severity ?? 0);
+  });
+});
+
 describe("computeFindings scoring calibration", () => {
   // Calibrated on the Valimock dogfood: keyed (obj[key]) megamorphism usually means
   // genuinely dynamic keys — inherent to generic dispatch — so it must rank below a

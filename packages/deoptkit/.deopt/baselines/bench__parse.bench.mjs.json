@@ -1,7 +1,14 @@
 {
-  "createdAt": "2026-11-04T16:12:42.206Z",
+  "createdAt": "2026-11-05T00:55:19.263Z",
   "script": "bench/parse.bench.mjs",
   "findings": [
+    {
+      "identity": "map-churn|src/analysis/findings.ts|finding|column,evidence,explanation,file,functionName,heat,kind,line,severity,suggestedFix,summary",
+      "kind": "map-churn",
+      "file": "src/analysis/findings.ts",
+      "functionName": "finding",
+      "summary": "52 map transitions created in one function (properties: heat, file, line, column, functionName, summary, kind, severity, … +3 more)"
+    },
     {
       "identity": "map-churn|src/analysis/findings.ts||.,CodeMap,G,H,N,P,ScriptPositions,SourceMapResolver,Symbol(),Symbol(anonymous),X,^,array,d,deopt-loop,dictionary-mode,eager-deopt,explanation,h,map-churn,megamorphic-ic,mixed,object,polymorphic-ic,s,soft-deopt,string,suggestedFix,t,v",
       "kind": "map-churn",
@@ -15,13 +22,6 @@
       "file": "src/analysis/findings.ts",
       "functionName": "computeFindings",
       "summary": "42 map transitions created in one function (properties: icType, key, worstState, transitions, keyedAccess, exampleMaps, receiver, receiverTypes, … +12 more)"
-    },
-    {
-      "identity": "map-churn|src/analysis/findings.ts|finding|column,evidence,explanation,file,functionName,line,severity,suggestedFix,summary",
-      "kind": "map-churn",
-      "file": "src/analysis/findings.ts",
-      "functionName": "finding",
-      "summary": "24 map transitions created in one function (properties: severity, file, line, column, functionName, summary, explanation, suggestedFix, … +1 more)"
     },
     {
       "identity": "map-churn|src/parser/logReader.ts|readLog|badLines,crlfDelay,unknownCommands",
@@ -45,17 +45,17 @@
       "summary": "KeyedLoadIC at a dynamic-key site went megamorphic (7 recorded transitions over 1 distinct keys, e.g. \"s\") — often inherent to generic dispatch"
     },
     {
-      "identity": "megamorphic-ic|src/analysis/findings.ts|finding|KeyedLoadIC",
-      "kind": "megamorphic-ic",
-      "file": "src/analysis/findings.ts",
-      "functionName": "finding",
-      "summary": "KeyedLoadIC at a dynamic-key site went megamorphic (6 recorded transitions over 3 distinct keys, e.g. \"megamorphic-ic\", \"soft-deopt\", \"map-churn\") — often inherent to generic dispatch"
-    },
-    {
       "identity": "megamorphic-ic|src/analysis/findings.ts|score|KeyedLoadIC",
       "kind": "megamorphic-ic",
       "file": "src/analysis/findings.ts",
       "functionName": "score",
+      "summary": "KeyedLoadIC at a dynamic-key site went megamorphic (2 recorded transitions over 2 distinct keys, e.g. \"megamorphic-ic\", \"soft-deopt\") — often inherent to generic dispatch"
+    },
+    {
+      "identity": "megamorphic-ic|src/analysis/findings.ts|finding|KeyedLoadIC",
+      "kind": "megamorphic-ic",
+      "file": "src/analysis/findings.ts",
+      "functionName": "finding",
       "summary": "KeyedLoadIC at a dynamic-key site went megamorphic (2 recorded transitions over 2 distinct keys, e.g. \"megamorphic-ic\", \"soft-deopt\") — often inherent to generic dispatch"
     },
     {

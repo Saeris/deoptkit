@@ -195,7 +195,9 @@ export const runCi = async (args: string[]): Promise<number> => {
   }
   let failed = false;
   const inGitHubActions = process.env["GITHUB_ACTIONS"] === "true";
-  const allFindings: Array<LocatedFinding & { script: string }> = [];
+  const allFindings: Array<
+    LocatedFinding & { script: string; baselined: boolean }
+  > = [];
 
   for (const script of options.scripts) {
     const findings = await analyzeScript(script);
@@ -203,7 +205,6 @@ export const runCi = async (args: string[]): Promise<number> => {
       log(`deoptkit ci: ${findings.error}`);
       return 2;
     }
-    for (const found of findings) allFindings.push({ ...found, script });
     const entries = toEntries(findings);
     const baselinePath = baselinePathFor(options.outDir, script);
     const baseline = await readBaseline(baselinePath);
@@ -226,71 +227,82 @@ export const runCi = async (args: string[]): Promise<number> => {
       );
     };
 
+    // The identities the baseline accepts once this run is over. The interchange
+    // marks those findings so editors can demote what the gate will never fail on.
+    let accepted: Set<string>;
     if (baseline === undefined) {
       await writeCurrent();
       log(
         `${basename(script)}: no baseline — wrote ${entries.length} finding(s) to ${baselinePath}`
       );
-      continue;
-    }
-
-    const known = new Set(baseline.findings.map(({ identity }) => identity));
-    const current = new Set(entries.map(({ identity }) => identity));
-    const introduced = findings.filter(
-      (found) =>
-        GATED_KINDS.has(found.kind) &&
-        !known.has(findingIdentity(portable(found)))
-    );
-    const resolved = baseline.findings.filter(
-      ({ identity }) => !current.has(identity)
-    );
-
-    if (options.update) {
-      await writeCurrent();
-      log(
-        `${basename(script)}: baseline updated (${entries.length} finding(s); +${introduced.length} new, -${resolved.length} resolved)`
+      accepted = new Set(entries.map(({ identity }) => identity));
+    } else {
+      const known = new Set(baseline.findings.map(({ identity }) => identity));
+      const current = new Set(entries.map(({ identity }) => identity));
+      const introduced = findings.filter(
+        (found) =>
+          GATED_KINDS.has(found.kind) &&
+          !known.has(findingIdentity(portable(found)))
       );
-      continue;
-    }
-
-    if (options.accumulate) {
-      const merged = mergeEntries(baseline.findings, entries);
-      await writeCurrent(merged);
-      const added = merged.filter(({ identity }) => !known.has(identity));
-      log(
-        `${basename(script)}: baseline accumulated (${merged.length} finding(s); +${added.length} new)`
+      const resolved = baseline.findings.filter(
+        ({ identity }) => !current.has(identity)
       );
-      continue;
-    }
 
-    if (introduced.length > 0) {
-      failed = true;
-      log(
-        `${basename(script)}: ${introduced.length} NEW finding(s) vs baseline:`
-      );
-      for (const found of introduced) {
-        const at = found.original ?? found;
+      if (options.update) {
+        await writeCurrent();
         log(
-          `  [${found.severity}] ${found.kind} @ ${at.file}:${at.line}:${at.column} — ${found.summary}`
+          `${basename(script)}: baseline updated (${entries.length} finding(s); +${introduced.length} new, -${resolved.length} resolved)`
         );
-        if (inGitHubActions) log(gitHubAnnotation(found));
+        accepted = current;
+      } else if (options.accumulate) {
+        const merged = mergeEntries(baseline.findings, entries);
+        await writeCurrent(merged);
+        const added = merged.filter(({ identity }) => !known.has(identity));
+        log(
+          `${basename(script)}: baseline accumulated (${merged.length} finding(s); +${added.length} new)`
+        );
+        accepted = new Set(merged.map(({ identity }) => identity));
+      } else {
+        accepted = known;
+        if (introduced.length > 0) {
+          failed = true;
+          log(
+            `${basename(script)}: ${introduced.length} NEW finding(s) vs baseline:`
+          );
+          for (const found of introduced) {
+            const at = found.original ?? found;
+            log(
+              `  [${found.severity}] ${found.kind} @ ${at.file}:${at.line}:${at.column} — ${found.summary}`
+            );
+            if (inGitHubActions) log(gitHubAnnotation(found));
+          }
+        }
+        if (resolved.length > 0) {
+          log(
+            `${basename(script)}: ${resolved.length} baselined finding(s) no longer occur — run with --update to accept:`
+          );
+          for (const entry of resolved)
+            log(`  ${entry.kind} — ${entry.summary}`);
+        }
+        if (introduced.length === 0 && resolved.length === 0) {
+          log(
+            `${basename(script)}: clean — matches baseline (${entries.length} finding(s))`
+          );
+        }
       }
     }
-    if (resolved.length > 0) {
-      log(
-        `${basename(script)}: ${resolved.length} baselined finding(s) no longer occur — run with --update to accept:`
-      );
-      for (const entry of resolved) log(`  ${entry.kind} — ${entry.summary}`);
-    }
-    if (introduced.length === 0 && resolved.length === 0) {
-      log(
-        `${basename(script)}: clean — matches baseline (${entries.length} finding(s))`
-      );
+    for (const found of findings) {
+      allFindings.push({
+        ...found,
+        script,
+        baselined: accepted.has(findingIdentity(portable(found)))
+      });
     }
   }
 
   // The findings interchange consumed by editor surfaces (deoptkit lsp) and agents:
-  // always the latest run's full picture, regardless of baseline verdicts.
+  // always the latest run's full picture, regardless of baseline verdicts, with
+  // `baselined` telling consumers which findings the gate already accepts.
   await mkdir(options.outDir, { recursive: true });
   await writeFile(
     join(options.outDir, "findings.json"),

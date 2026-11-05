@@ -33,9 +33,21 @@
     "workspaceContains:.deopt/findings.json"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "deoptkit.toggle",
+        "title": "Toggle Enable/Disable",
+        "category": "deoptkit"
+      }
+    ],
     "configuration": {
       "title": "deoptkit",
       "properties": {
+        "deoptkit.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the deoptkit language server and show its findings as diagnostics. The `deoptkit: Toggle Enable/Disable` command flips this for the workspace."
+        },
         "deoptkit.findingsPath": {
           "type": "string",
           "default": ".deopt/findings.json",
