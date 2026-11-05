@@ -33,7 +33,10 @@ export interface DeoptKitManifest {
   logfiles: string[];
 }
 
-/** The findings interchange `deoptkit lsp` reads; `deoptkit ci` writes the same shape. */
+/**
+ * The findings interchange `deoptkit lsp` reads; `deoptkit ci` writes the same shape
+ * plus a `baselined` flag per finding, which this writer has no baseline to set.
+ */
 export interface DeoptKitFindingsFile {
   createdAt: string;
   outDir: string;

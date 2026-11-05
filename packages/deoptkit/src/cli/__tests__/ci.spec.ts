@@ -76,11 +76,49 @@ describe("deoptkit ci", () => {
     await copyFile(join(WORKLOAD_DIR, "map-churn.js"), app);
     await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(1);
 
+    // The interchange tells editors which findings the gate accepts, so that
+    // accepted findings can be demoted while new ones stay problems. A failing
+    // run therefore marks its new structural findings as not baselined.
+    const GATED = [
+      "megamorphic-ic",
+      "map-churn",
+      "dictionary-mode",
+      "deopt-loop"
+    ];
+    const readInterchange = async (): Promise<
+      { kind: string; baselined: boolean; heat: number }[]
+    > =>
+      (
+        JSON.parse(await readFile(join(outDir, "findings.json"), "utf8")) as {
+          findings: { kind: string; baselined: boolean; heat: number }[];
+        }
+      ).findings;
+    const regressed = await readInterchange();
+    expect(
+      regressed.some((found) => found.kind === "map-churn" && !found.baselined)
+    ).toBe(true);
+
     // Accept the new state, then it passes.
     await expect(runCi(["--out-dir", outDir, "--update", app])).resolves.toBe(
       0
     );
     await expect(runCi(["--out-dir", outDir, app])).resolves.toBe(0);
+
+    // Once accepted, every gated finding is marked baselined; kinds the gate does
+    // not track are never baselined, and every finding carries the heat it was
+    // scored with.
+    const acceptedRun = await readInterchange();
+    const gated = acceptedRun.filter((found) => GATED.includes(found.kind));
+    expect(gated.length).toBeGreaterThan(0);
+    expect(gated.every((found) => found.baselined)).toBe(true);
+    expect(
+      acceptedRun
+        .filter((found) => !GATED.includes(found.kind))
+        .every((found) => !found.baselined)
+    ).toBe(true);
+    expect(acceptedRun.every((found) => typeof found.heat === "number")).toBe(
+      true
+    );
 
     // A baseline is committed and must match on any machine; an absolute path in the
     // identity makes every CI run fail with "NEW" findings. (The fixed variant's first
@@ -136,6 +174,7 @@ describe("deoptkit ci", () => {
     const annotation = gitHubAnnotation({
       kind: "megamorphic-ic",
       severity: 50,
+      heat: 0.2,
       file: "file:///C:/repo/dist/app.js",
       line: 3,
       column: 9,

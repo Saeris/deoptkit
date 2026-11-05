@@ -16,6 +16,10 @@ const positionSchema = v.object({
 const findingSchema = v.object({
   kind: v.string(),
   severity: v.number(),
+  /** Share of profile self ticks the finding was scored with; 0 means never sampled. */
+  heat: v.optional(v.number()),
+  /** Set by `deoptkit ci` on findings its baseline already accepts. */
+  baselined: v.optional(v.boolean()),
   file: v.string(),
   line: v.number(),
   column: v.number(),
@@ -54,11 +58,33 @@ const severityOf = (score: number): LspSeverity =>
 const toUri = (file: string): string =>
   file.startsWith("file:") ? file : pathToFileURL(resolvePath(file)).href;
 
-const messageOf = (finding: FileFinding, stale: boolean): string => {
+/** Why a finding is published below the severity its score calls for. */
+interface Demotions {
+  /** The annotated file changed after the observation. */
+  stale: boolean;
+  /** The committed baseline already accepts it; `deoptkit ci` will not fail on it. */
+  baselined: boolean;
+  /** The profiler never sampled the function or file, so it cost no time. */
+  cold: boolean;
+}
+
+const messageOf = (finding: FileFinding, demoted: Demotions): string => {
   const lines = [`[${finding.severity}] ${finding.summary}`];
   if (finding.explanation) lines.push("", `Why: ${finding.explanation}`);
   if (finding.suggestedFix) lines.push(`Fix: ${finding.suggestedFix}`);
-  if (stale) {
+  if (demoted.baselined) {
+    lines.push(
+      "",
+      "(baselined — already accepted in the committed baseline; deoptkit ci fails only on new findings)"
+    );
+  }
+  if (demoted.cold) {
+    lines.push(
+      "",
+      "(cold — the profiler never sampled this function or its file, so it cost no time in this run)"
+    );
+  }
+  if (demoted.stale) {
     lines.push(
       "",
       "(stale — the source changed after this observation; re-run the bench)"
@@ -68,10 +94,23 @@ const messageOf = (finding: FileFinding, stale: boolean): string => {
 };
 
 /**
+ * Baselined and cold findings are published as Hint, the one LSP severity editors
+ * keep out of the Problems panel: the finding stays discoverable in the hover
+ * without competing with the findings that are new or actually ran. Stale findings
+ * downgrade to Information rather than lie about edited code.
+ */
+const severityFor = (finding: FileFinding, demoted: Demotions): LspSeverity =>
+  demoted.baselined || demoted.cold
+    ? 4
+    : demoted.stale
+      ? 3
+      : severityOf(finding.severity);
+
+/**
  * Map the findings interchange to per-URI LSP diagnostics. Positions prefer the
  * source-mapped original; LSP is 0-based where findings are 1-based. `staleFor`
- * reports whether the annotated file changed after the observation, downgrading
- * the diagnostic to Information rather than letting it lie about edited code.
+ * reports whether the annotated file changed after the observation. Findings
+ * without `heat` or `baselined` come from older writers and are never demoted.
  */
 export const toDiagnostics = (
   payload: FindingsFile,
@@ -81,7 +120,11 @@ export const toDiagnostics = (
   for (const finding of payload.findings) {
     const at = finding.original ?? finding;
     const uri = toUri(at.file);
-    const stale = staleFor(at.file);
+    const demoted: Demotions = {
+      stale: staleFor(at.file),
+      baselined: finding.baselined === true,
+      cold: finding.heat === 0
+    };
     const line = Math.max(0, at.line - 1);
     const character = Math.max(0, at.column - 1);
     const diagnostic: Diagnostic = {
@@ -89,10 +132,10 @@ export const toDiagnostics = (
         start: { line, character },
         end: { line, character: character + 1 }
       },
-      severity: stale ? 3 : severityOf(finding.severity),
+      severity: severityFor(finding, demoted),
       source: "deoptkit",
       code: finding.kind,
-      message: messageOf(finding, stale)
+      message: messageOf(finding, demoted)
     };
     const list = byUri.get(uri);
     if (list) list.push(diagnostic);
