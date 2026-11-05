@@ -1,6 +1,15 @@
 # Changelog
 
 
+
+## 0.3.0
+<sub>2026-11-05</sub>
+
+- [#4](https://github.com/Saeris/deoptkit/pull/4)  *(minor)* Thanks [@Saeris](https://github.com/Saeris)!
+  Findings learned from the first passes over real projects. A new `dictionary-mode` finding reports objects that V8 normalized out of fast-properties mode (keyed stores past the 12-field soft limit, or `delete`) at the store that did it, instead of counting those normalizations as map churn; it is gated by `deoptkit ci`. Megamorphic and polymorphic IC findings now classify their receivers from the printed maps: a site polymorphic over string representations or over array elements kinds says so in its summary and evidence (`receiver`, `receiverTypes`, `elementsKinds`) and ranks below object-shape polymorphism, since property-order advice does not apply to it. Session quality reports `tickIntervalMs` and warns `sparse-ticks` when logging starved the profiler, pointing at a `categories: ["profile"]` pass. `get_findings` lists the files on the page that have no source map under `unmapped`. `get_profile` nodes carry `folded`, the builtins and dependency functions whose time just-my-code charged to them. `deoptkit/harness` adds `interleaved()` for before/after timing by rotating variants within one process, and `observed()` returns `durationMs`.
+- [#6](https://github.com/Saeris/deoptkit/pull/6)  *(minor)* Thanks [@Saeris](https://github.com/Saeris)!
+  Findings carry `heat`, the share of profile self ticks their severity was scored with, and `deoptkit ci` marks the findings its baseline accepts with `baselined` in `.deopt/findings.json`. `deoptkit lsp` publishes baselined and cold (never sampled) findings as hints, which editors keep out of the Problems panel, so the panel lists only findings that are new and actually ran. The VSCode extension gains a `deoptkit.enable` setting and a **deoptkit: Toggle Enable/Disable** command that stops or starts the language server for the workspace.
+
 ## 0.2.0
 <sub>2026-11-04</sub>
 
