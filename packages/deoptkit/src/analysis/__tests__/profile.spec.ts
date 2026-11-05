@@ -107,6 +107,63 @@ describe("buildProfileTree", () => {
     ).toEqual(["c", "x"]);
   });
 
+  // A bench callback that calls straight into a library shows 100% self time under
+  // just-my-code; without the names of what actually ran, the only way to learn
+  // where the time went was a second call with justMyCode off.
+  it("names the folded internals that were executing under a user node", () => {
+    const tree = buildProfileTree(
+      profileOf([x, b, a], [x, b, a], [c, b, a]),
+      options()
+    );
+    const [root] = tree.roots;
+    const bNode = root?.children.find(
+      ({ functionName }) => functionName === "b"
+    );
+    expect(bNode?.selfTicks).toBe(2);
+    expect(bNode?.folded).toEqual([
+      {
+        functionName: "x",
+        file: "node:internal/x",
+        line: 1,
+        column: 1,
+        selfTicks: 2
+      }
+    ]);
+    // c ran itself; nothing was folded into it.
+    expect(bNode?.children[0]?.folded).toBeUndefined();
+
+    const bottomUp = buildProfileTree(
+      profileOf([x, b, a], [x, b, a], [c, b, a]),
+      options({ view: "bottom-up" })
+    );
+    expect(
+      bottomUp.roots.find(({ functionName }) => functionName === "b")?.folded
+    ).toEqual([
+      {
+        functionName: "x",
+        file: "node:internal/x",
+        line: 1,
+        column: 1,
+        selfTicks: 2
+      }
+    ]);
+  });
+
+  it("folds nothing when internals are kept as their own nodes or fall below minPercent", () => {
+    const everything = buildProfileTree(
+      profileOf([x, b, a]),
+      options({ justMyCode: false })
+    );
+    expect(everything.roots[0]?.children[0]?.folded).toBeUndefined();
+
+    const pruned = buildProfileTree(
+      profileOf([x, b, a], [c, b, a], [c, b, a], [c, b, a]),
+      options({ minPercent: 50 })
+    );
+    expect(pruned.roots[0]?.children[0]?.selfTicks).toBe(1);
+    expect(pruned.roots[0]?.children[0]?.folded).toBeUndefined();
+  });
+
   it("skips samples without any user frame instead of rooting them under internals", () => {
     const tree = buildProfileTree(profileOf([x], [x, a], [a]), options());
 

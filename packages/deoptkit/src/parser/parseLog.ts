@@ -619,7 +619,17 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       // A create at a seen address means V8 reused it after GC; the fresh entry wins.
       mapEntries.set(address ?? "", freshMapEntry(address ?? "", Number(time)));
     },
-    map: ([subtype, time, from, to, pc, line, column, , rawName]): void => {
+    map: ([
+      subtype,
+      time,
+      from,
+      to,
+      pc,
+      line,
+      column,
+      reason,
+      rawName
+    ]): void => {
       const kind = subtype ?? "unknown";
       const name = rawName === undefined ? undefined : normalizeV8Name(rawName);
       mapEventCounts.set(kind, (mapEventCounts.get(kind) ?? 0) + 1);
@@ -651,6 +661,8 @@ export const parseLog = async (path: string): Promise<LogModel> => {
       site.count += 1;
       site.events.push({
         time: timestamp,
+        subtype: kind,
+        reason: reason === undefined || reason === "" ? undefined : reason,
         propertyName: name === "" ? undefined : name,
         mapAddress: to ?? ""
       });

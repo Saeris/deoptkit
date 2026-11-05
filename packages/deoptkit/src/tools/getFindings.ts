@@ -4,6 +4,7 @@ import type { Finding } from "../analysis/findings";
 import { computeFindings } from "../analysis/findings";
 import { sessionQuality } from "../analysis/quality";
 import type { Session } from "../sessions";
+import { resolverFor } from "../sourcemaps/resolver";
 import { defineTool, jsonResult } from "./defineTool";
 import {
   fileFilterSchema,
@@ -28,7 +29,8 @@ const FINDING_KINDS = [
   "deopt-loop",
   "eager-deopt",
   "soft-deopt",
-  "map-churn"
+  "map-churn",
+  "dictionary-mode"
 ] as const;
 
 type Located = ReturnType<typeof presentLocation<Finding>>;
@@ -131,6 +133,10 @@ export const getFindings = defineTool({
     // One bench suite is N worker logs; the agent needs one ranked answer, not N
     // get_findings calls whose duplicates it has to merge by hand.
     const rows: IdentifiedFinding[] = [];
+    // Files whose positions cannot be mapped back to a source. An agent that only
+    // sees `original` missing cannot tell a plain script from a bundle built without
+    // a map, and edits the bundle.
+    const unmapped = new Set<string>();
     for (const session of sessions) {
       const model = windowedModel(session, { fromMark, toMark });
       if ("error" in model) {
@@ -141,16 +147,19 @@ export const getFindings = defineTool({
           { isError: true }
         );
       }
+      const resolver = resolverFor(session);
       for (const candidate of computeFindings(model)) {
         if (
           (kinds === undefined || kinds.includes(candidate.kind)) &&
           (severityMin === undefined || candidate.severity >= severityMin) &&
           matchesFile(candidate.file, file)
         ) {
+          const item = presentLocation(session, candidate);
+          if (!resolver.hasMap(candidate.file)) unmapped.add(item.file);
           rows.push({
             sessionId: session.id,
             identity: findingIdentity(candidate),
-            item: presentLocation(session, candidate)
+            item
           });
         }
       }
@@ -170,11 +179,22 @@ export const getFindings = defineTool({
       limit,
       offset
     );
+    const unmappedFiles = [...unmapped].filter((path) =>
+      page.items.some((item) => item.file === path)
+    );
     return jsonResult({
       ...page,
       items: page.items.map(slimFinding),
       kinds: kindsLegend(page.items),
-      ...(qualityWarnings.length > 0 ? { qualityWarnings } : {})
+      ...(qualityWarnings.length > 0 ? { qualityWarnings } : {}),
+      ...(unmappedFiles.length > 0
+        ? {
+            unmapped: {
+              files: unmappedFiles,
+              note: "These files carry no source map, so their findings have no `original` position and point into the file itself. If a file is built output, rebuild it with a source map (inline or .map beside it) to get positions in the source you edit."
+            }
+          }
+        : {})
     });
   }
 });

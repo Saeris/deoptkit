@@ -19,7 +19,9 @@ Use the `deopt` MCP server (the `deoptkit` package) to find and fix structural V
 3. Edit the source at the finding's `original` position when present (that is the `.ts`/`.js` you wrote), otherwise at its file and line. Prefer the smallest change that normalizes object shapes or stabilizes types.
 4. Call `profile_run` again, then `compare_sessions` with `{ baseSessionId, headSessionId }` to confirm the finding is in `resolved` and nothing meaningful is in `introduced`. If findings remain above severity 30, repeat from step 2.
 
-When a finding needs more context, drill down: `get_function` (annotated source plus its ICs, deopts, and ticks), `get_map` (a shape's transition chain and the call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, and `get_profile` (the call tree: who calls the hot function, top-down or bottom-up). To analyze an existing `v8.log`, use `load_log`; to load every log from a `deoptkit/vitest` bench run, use `load_manifest`. `list_sessions` shows what is already loaded. To scope findings to one benchmark case, pass `fromMark` and `toMark` (markers from `deoptkit/harness` or `benchObserved`).
+When a finding needs more context, drill down: `get_function` (annotated source plus its ICs, deopts, and ticks), `get_map` (a shape's transition chain and the call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, and `get_profile` (the call tree: who calls the hot function, top-down or bottom-up; each node's `folded` list names the builtins and dependency functions whose time was charged to it, so a bench callback that calls straight into a library still shows where the time went).
+
+Read `quality.warnings` on every `profile_run` and `load_log` response. `cold` and `no-ticks` mean the workload needs more iterations. `sparse-ticks` means IC and map logging starved the profiler (common on Windows and on IC-dense code): the findings stand, but for heat ranking and `get_profile` run once more with `categories: ["profile"]` and read the call tree from that session. If `get_findings` returns `unmapped`, those files carry no source map: edit the source that produced them, or rebuild with a map, instead of editing the bundle. To analyze an existing `v8.log`, use `load_log`; to load every log from a `deoptkit/vitest` bench run, use `load_manifest`. `list_sessions` shows what is already loaded. To scope findings to one benchmark case, pass `fromMark` and `toMark` (markers from `deoptkit/harness` or `benchObserved`).
 
 ## Token discipline
 
@@ -56,10 +58,13 @@ Then `profile_run { command: ["node", "bench/parse.bench.mjs"] }` and window wit
 - `eager-deopt`: optimized code bailed out on a state its type feedback did not predict. The reason string names the failed assumption; make that value or shape consistent.
 - `soft-deopt`: V8 deoptimized on purpose to gather feedback. Usually harmless; act only if the site also has eager deopts or sits in a hot function.
 - `map-churn`: one creation site produces many hidden classes, usually from conditional or reordered property assignment. Initialize every property unconditionally in a fixed order (use `undefined` for optional fields), or use a class constructor.
+- `dictionary-mode`: objects built at this store left fast-properties mode (keyed `obj[key] = value` stores past V8's soft limit of about 12 fields, or `delete`), so every access on them is a hash lookup. Define the properties in one step (`Object.fromEntries`, a literal, spread, `Object.assign`), avoid `delete`, or use a Map for a genuinely dynamic table.
+
+An IC finding's `receiver` says what reached the site. `string` means polymorphism over V8's own string representations (one-byte, two-byte, cons, sliced): nothing to align, leave it. `array` means arrays that differ only by elements kind: keep each array's element type uniform (all ints, all doubles, or all objects; avoid holes). Both rank below object-shape polymorphism.
 
 ## Verifying
 
-A fix is done when `compare_sessions` shows the finding in `resolved` and nothing meaningful in `introduced`. For a permanent guard, gate CI on new structural findings:
+A fix is done when `compare_sessions` shows the finding in `resolved` and nothing meaningful in `introduced`. To show it is also faster, do not compare two separate runs' wall-clock numbers (they drift by 30% or more on a busy machine): import both versions into one script and call `interleaved("case", { before, after }, { rounds: 9 })` from `deoptkit/harness`, which rotates the variants each round and returns the median milliseconds per variant. For a permanent guard, gate CI on new structural findings:
 
 ```bash
 deoptkit ci bench/parse.bench.mjs             # first run writes .deopt/baselines/…, passes

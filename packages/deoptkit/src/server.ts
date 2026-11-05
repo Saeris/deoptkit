@@ -95,7 +95,13 @@ const SERVER_INSTRUCTIONS = [
   "(the observed() helper in deoptkit/harness encodes this). Profile built output, not source, for libraries.",
   "",
   "Every profile_run/load_log response carries `quality.warnings`; a `cold` or `no-ticks` warning means the findings describe",
-  "warm-up, not steady state, and the workload needs more iterations before they are worth acting on."
+  "warm-up, not steady state, and the workload needs more iterations before they are worth acting on. A `sparse-ticks`",
+  "warning means IC and map logging starved the profiler: for heat and get_profile, run once more with",
+  'categories: ["profile"] and read the call tree from that session.',
+  "",
+  "Not every polymorphic site is an object-shape problem: a finding whose `receiver` is `string` (V8 string",
+  "representations) cannot be fixed by property order, and `array` means mixed elements kinds. get_findings lists",
+  "files without a source map under `unmapped`; edit the source that produced them, not the bundle."
 ].join("\n");
 
 export const createServer = (): Server => {

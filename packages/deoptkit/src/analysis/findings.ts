@@ -1,4 +1,4 @@
-import type { LogModel } from "../model/logModel";
+import type { IcSite, LogModel } from "../model/logModel";
 
 export type FindingKind =
   | "megamorphic-ic"
@@ -6,7 +6,8 @@ export type FindingKind =
   | "deopt-loop"
   | "eager-deopt"
   | "soft-deopt"
-  | "map-churn";
+  | "map-churn"
+  | "dictionary-mode";
 
 export interface Finding {
   kind: FindingKind;
@@ -79,16 +80,120 @@ export const FINDING_EXPLANATIONS: Record<
       "Object creation here produces many distinct hidden classes (maps) for conceptually similar objects, usually via conditional or variably-ordered property assignment. Downstream property accesses then go polymorphic or megamorphic.",
     suggestedFix:
       "Initialize every property unconditionally and in a fixed order at construction (assign undefined for optional fields), or use a class constructor that always defines the full shape."
+  },
+  "dictionary-mode": {
+    explanation:
+      "Objects built or extended here left fast-properties mode: V8 moved them to a dictionary (hash table) backing store, so every property access on them is a hash lookup and the inline caches that see them cannot specialize. The usual trigger (`TooManyFastProperties`) is adding properties one at a time with keyed stores (`obj[key] = value`) past V8's soft limit of about 12 out-of-object fields; `delete` of a property that is not the last one added (`DeletingProperty`) normalizes an object too.",
+    suggestedFix:
+      "Define the properties in one step instead of storing them one by one: an object literal, spread, `Object.assign`, or `Object.fromEntries(pairs)` keep up to 128 fast properties. Avoid `delete` (set the field to undefined instead). If the object really is a dynamic string-keyed table, use a Map."
   }
 };
 
 const BASE_WEIGHT: Record<FindingKind, number> = {
   "megamorphic-ic": 18,
   "deopt-loop": 16,
+  "dictionary-mode": 14,
   "map-churn": 10,
   "eager-deopt": 8,
   "polymorphic-ic": 6,
   "soft-deopt": 3
+};
+
+/**
+ * V8 normalizes prototypes and module namespaces on purpose (prototype maps are
+ * dictionary-mode by design, so that adding methods does not invalidate every
+ * instance's shape), and accessor-pair normalizations are host plumbing far more
+ * often than user code: Node defines `import.meta`'s accessors at the user's first
+ * `import.meta` access, which the dogfood gate reported as three slow objects in
+ * the bench. Only the remaining reasons (`TooManyFastProperties`, `DeletingProperty`)
+ * mean a hot object went slow.
+ */
+const DELIBERATE_NORMALIZE_RE =
+  /Prototype|ProtoMap|ModuleNamespace|TransitionToAccessorPair|TransitionToDifferentAccessor/u;
+
+/**
+ * What kind of value reached an IC site, from the map-details of the maps its
+ * transitions recorded. Strings go polymorphic over V8's own representations
+ * (one-byte, two-byte, cons, sliced, thin, internalized or not) and arrays over
+ * their elements kinds (packed or holey; smi, double or tagged), which no change
+ * to property order can fix, so those sites get their own clause and rank below
+ * object-shape problems. Undefined when none of the maps was printed (the maps
+ * category was off).
+ */
+type Receiver = "object" | "string" | "array" | "mixed";
+
+interface ReceiverSummary {
+  receiver: Receiver;
+  types: string[];
+  elementsKinds: string[];
+}
+
+const summarizeReceivers = (
+  model: LogModel,
+  site: IcSite
+): ReceiverSummary | undefined => {
+  const types = new Set<string>();
+  const elementsKinds = new Set<string>();
+  for (const { mapAddress } of site.transitions) {
+    const details = model.maps.entries.get(mapAddress)?.details;
+    if (details === undefined || details.type === "") continue;
+    types.add(details.type);
+    if (details.type === "JS_ARRAY_TYPE" && details.elementsKind !== undefined)
+      elementsKinds.add(details.elementsKind);
+  }
+  if (types.size === 0) return undefined;
+  const classes = new Set(
+    [...types].map((type) =>
+      type.endsWith("_STRING_TYPE")
+        ? "string"
+        : // Arrays that differ only by elements kind are an elements problem; arrays
+          // polymorphic for any other reason (extra named properties) are shapes.
+          type === "JS_ARRAY_TYPE" && elementsKinds.size > 1
+          ? "array"
+          : "object"
+    )
+  );
+  const [only] = classes;
+  return {
+    receiver: classes.size === 1 ? only : "mixed",
+    types: [...types],
+    elementsKinds: [...elementsKinds]
+  };
+};
+
+/**
+ * String representation polymorphism is V8's doing and the user cannot normalize
+ * it, so it ranks like noise. Mixed elements kinds are fixable (keep each array's
+ * element type uniform) but with different advice from shape alignment, so they
+ * rank below it.
+ */
+const RECEIVER_DISCOUNT: Record<Receiver, number> = {
+  object: 1,
+  mixed: 1,
+  string: 0.3,
+  array: 0.6
+};
+
+const listOf = (items: string[], limit = 4): string =>
+  items.slice(0, limit).join(", ") +
+  (items.length > limit ? `, … +${items.length - limit} more` : "");
+
+/** The clause appended to an IC finding's summary when its receivers are not plain objects. */
+const receiverClause = ({
+  receiver,
+  types,
+  elementsKinds
+}: ReceiverSummary): string => {
+  switch (receiver) {
+    case "string":
+      return ` over ${types.length} string representations (${listOf(types)}): V8-internal string kinds, not object shapes`;
+    case "array":
+      return ` over arrays of ${elementsKinds.length} elements kinds (${listOf(elementsKinds)}): keep each array's element type uniform`;
+    case "mixed":
+      return ` over mixed receiver types (${listOf(types)})`;
+    case "object":
+      return "";
+  }
 };
 
 /**
@@ -210,15 +315,34 @@ export const computeFindings = (model: LogModel): Finding[] => {
     const exampleMaps: string[] = [];
     for (const { mapAddress } of site.transitions)
       addExampleMap(exampleMaps, mapAddress, 3);
+    const receivers = summarizeReceivers(model, site);
+    const clause = receivers === undefined ? "" : receiverClause(receivers);
+    const receiverDiscount =
+      receivers === undefined ? 1 : RECEIVER_DISCOUNT[receivers.receiver];
+    const receiverEvidence =
+      receivers === undefined
+        ? {}
+        : {
+            receiver: receivers.receiver,
+            receiverTypes: receivers.types.slice(0, 8),
+            ...(receivers.elementsKinds.length > 1
+              ? { elementsKinds: receivers.elementsKinds }
+              : {})
+          };
     if (site.worstState === "megamorphic" || site.worstState === "generic") {
       findings.push(
         finding(
           "megamorphic-ic",
           at,
           keyed
-            ? `${site.type} at a dynamic-key site went megamorphic (${hits} recorded transitions over ${site.distinctKeys} distinct keys, e.g. ${exampleKeys}) — often inherent to generic dispatch`
-            : `${site.type} for property "${site.key}" went megamorphic (${hits} recorded transitions)`,
-          score("megamorphic-ic", hits, heat, keyed ? KEYED_IC_DISCOUNT : 1),
+            ? `${site.type} at a dynamic-key site went megamorphic (${hits} recorded transitions over ${site.distinctKeys} distinct keys, e.g. ${exampleKeys})${clause} — often inherent to generic dispatch`
+            : `${site.type} for property "${site.key}" went megamorphic (${hits} recorded transitions)${clause}`,
+          score(
+            "megamorphic-ic",
+            hits,
+            heat,
+            (keyed ? KEYED_IC_DISCOUNT : 1) * receiverDiscount
+          ),
           keyed
             ? {
                 icType: site.type,
@@ -227,7 +351,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
                 worstState: site.worstState,
                 transitions: hits,
                 keyedAccess: true,
-                exampleMaps
+                exampleMaps,
+                ...receiverEvidence
               }
             : {
                 icType: site.type,
@@ -235,7 +360,8 @@ export const computeFindings = (model: LogModel): Finding[] => {
                 worstState: site.worstState,
                 transitions: hits,
                 keyedAccess: false,
-                exampleMaps
+                exampleMaps,
+                ...receiverEvidence
               }
         )
       );
@@ -245,9 +371,9 @@ export const computeFindings = (model: LogModel): Finding[] => {
           "polymorphic-ic",
           at,
           keyed
-            ? `${site.type} at a dynamic-key site (${site.distinctKeys} distinct keys, e.g. ${exampleKeys}) is polymorphic inside a hot function`
-            : `${site.type} for property "${site.key}" is polymorphic inside a hot function`,
-          score("polymorphic-ic", hits, heat),
+            ? `${site.type} at a dynamic-key site (${site.distinctKeys} distinct keys, e.g. ${exampleKeys}) is polymorphic inside a hot function${clause}`
+            : `${site.type} for property "${site.key}" is polymorphic inside a hot function${clause}`,
+          score("polymorphic-ic", hits, heat, receiverDiscount),
           keyed
             ? {
                 icType: site.type,
@@ -255,14 +381,16 @@ export const computeFindings = (model: LogModel): Finding[] => {
                 distinctKeys: site.distinctKeys,
                 worstState: site.worstState,
                 transitions: hits,
-                exampleMaps
+                exampleMaps,
+                ...receiverEvidence
               }
             : {
                 icType: site.type,
                 key: site.key,
                 worstState: site.worstState,
                 transitions: hits,
-                exampleMaps
+                exampleMaps,
+                ...receiverEvidence
               }
         )
       );
@@ -390,17 +518,70 @@ export const computeFindings = (model: LogModel): Finding[] => {
     exampleMaps: string[];
   }
   const churnGroups = new Map<string, ChurnGroup>();
+  // Normalization is not shape churn: a normalized object leaves the transition tree,
+  // and the NormalizedMapCache hands repeat offenders the same dictionary map. Counted
+  // as churn it produced a wall of "transitions" at a keyed-store site (the Valimock
+  // builder) that no property-order edit could fix. Grouped per function like churn,
+  // since one store loop logs under several pcs as it tiers up.
+  interface NormalizeGroup {
+    file: string;
+    functionName: string | undefined;
+    anchor: { line: number; column: number; count: number };
+    count: number;
+    reasons: string[];
+    exampleMaps: string[];
+  }
+  const normalizeGroups = new Map<string, NormalizeGroup>();
   for (const site of model.maps.transitionSites) {
     if (!isUserCode(site.file)) continue;
     // Anonymous functions (V8 names them "") and module top-level code share one name,
     // so the position of the function itself is what tells them apart.
     const key = `${site.functionName}|${site.file}|${site.functionLine}|${site.functionColumn}`;
+    const transitions = site.events.filter(
+      ({ subtype }) => !subtype.startsWith("Normalize")
+    );
+    const slowed = site.events.filter(
+      ({ subtype, reason }) =>
+        subtype.startsWith("Normalize") &&
+        !DELIBERATE_NORMALIZE_RE.test(reason ?? "")
+    );
+    if (slowed.length > 0) {
+      let group = normalizeGroups.get(key);
+      if (!group) {
+        group = {
+          file: site.file,
+          functionName: site.functionName,
+          anchor: { line: site.line, column: site.column, count: 0 },
+          count: 0,
+          reasons: [],
+          exampleMaps: []
+        };
+        normalizeGroups.set(key, group);
+      }
+      group.count += slowed.length;
+      if (slowed.length > group.anchor.count)
+        group.anchor = {
+          line: site.line,
+          column: site.column,
+          count: slowed.length
+        };
+      for (const { reason, mapAddress } of slowed) {
+        addExampleMap(group.exampleMaps, mapAddress, 3);
+        const name = reason ?? "unknown";
+        if (!group.reasons.includes(name)) group.reasons.push(name);
+      }
+    }
+    if (transitions.length === 0) continue;
     let group = churnGroups.get(key);
     if (!group) {
       group = {
         file: site.file,
         functionName: site.functionName,
-        anchor: { line: site.line, column: site.column, count: site.count },
+        anchor: {
+          line: site.line,
+          column: site.column,
+          count: transitions.length
+        },
         count: 0,
         propertyNames: [],
         transitionsPerName: new Map(),
@@ -408,25 +589,46 @@ export const computeFindings = (model: LogModel): Finding[] => {
       };
       churnGroups.set(key, group);
     }
-    group.count += site.count;
-    if (site.count > group.anchor.count) {
+    group.count += transitions.length;
+    if (transitions.length > group.anchor.count) {
       group.anchor = {
         line: site.line,
         column: site.column,
-        count: site.count
+        count: transitions.length
       };
     }
-    for (const { propertyName, mapAddress } of site.events) {
+    for (const { propertyName, mapAddress } of transitions) {
       addExampleMap(group.exampleMaps, mapAddress, 5);
       if (propertyName === undefined) continue;
       group.transitionsPerName.set(
         propertyName,
         (group.transitionsPerName.get(propertyName) ?? 0) + 1
       );
+      if (!group.propertyNames.includes(propertyName))
+        group.propertyNames.push(propertyName);
     }
-    for (const name of site.propertyNames) {
-      if (!group.propertyNames.includes(name)) group.propertyNames.push(name);
-    }
+  }
+
+  for (const group of normalizeGroups.values()) {
+    const reasons = group.reasons.toSorted();
+    findings.push(
+      finding(
+        "dictionary-mode",
+        {
+          file: group.file,
+          line: group.anchor.line,
+          column: group.anchor.column,
+          functionName: group.functionName
+        },
+        `${group.count} objects left fast-properties mode here (${reasons.join("; ")})`,
+        score(
+          "dictionary-mode",
+          group.count,
+          heatOf(group.functionName, group.file)
+        ),
+        { count: group.count, reasons, exampleMaps: group.exampleMaps }
+      )
+    );
   }
 
   /** Unbounded random-keyed creation shows as volume even without per-name repeats. */

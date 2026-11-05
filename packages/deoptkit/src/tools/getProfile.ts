@@ -14,6 +14,9 @@ import {
 
 const presentNode = (session: Session, node: ProfileNode): ProfileNode => ({
   ...presentFile(session, node),
+  ...(node.folded === undefined
+    ? {}
+    : { folded: node.folded.map((frame) => presentFile(session, frame)) }),
   children: node.children.map((child) => presentNode(session, child))
 });
 
@@ -22,7 +25,8 @@ export const getProfile = defineTool({
   title: "CPU call tree",
   description:
     "Call tree from the profiler samples: top-down (who calls what, from the roots) or bottom-up (hot functions and their callers). " +
-    "Defaults to the user's own code with builtins and dependencies folded into their nearest user caller; " +
+    "Defaults to the user's own code with builtins and dependencies folded into their nearest user caller, " +
+    "whose `folded` list names the folded functions that were actually running; " +
     "pruned by maxDepth, limit (children per node), and minPercent (share of attributed ticks). " +
     "Window with fromMark/toMark like get_findings.",
   annotations: { readOnlyHint: true, idempotentHint: true },

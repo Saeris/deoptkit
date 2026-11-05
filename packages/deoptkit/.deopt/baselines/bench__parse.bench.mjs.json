@@ -1,20 +1,20 @@
 {
-  "createdAt": "2026-11-04T07:26:19.799Z",
+  "createdAt": "2026-11-04T16:12:42.206Z",
   "script": "bench/parse.bench.mjs",
   "findings": [
     {
-      "identity": "map-churn|src/analysis/findings.ts||.,CodeMap,G,H,N,P,ScriptPositions,SourceMapResolver,Symbol(),Symbol(anonymous),X,^,d,deopt-loop,eager-deopt,explanation,h,map-churn,megamorphic-ic,polymorphic-ic,s,soft-deopt,suggestedFix,t,v",
+      "identity": "map-churn|src/analysis/findings.ts||.,CodeMap,G,H,N,P,ScriptPositions,SourceMapResolver,Symbol(),Symbol(anonymous),X,^,array,d,deopt-loop,dictionary-mode,eager-deopt,explanation,h,map-churn,megamorphic-ic,mixed,object,polymorphic-ic,s,soft-deopt,string,suggestedFix,t,v",
       "kind": "map-churn",
       "file": "src/analysis/findings.ts",
       "functionName": "",
-      "summary": "41 map transitions created in one function (properties: explanation, suggestedFix, megamorphic-ic, polymorphic-ic, deopt-loop, eager-deopt, soft-deopt, map-churn, … +17 more)"
+      "summary": "45 map transitions created in one function (properties: explanation, suggestedFix, megamorphic-ic, polymorphic-ic, deopt-loop, eager-deopt, soft-deopt, map-churn, … +22 more)"
     },
     {
-      "identity": "map-churn|src/analysis/findings.ts|computeFindings|anchor,column,count,exampleMaps,file,functionName,icType,inlinedCount,key,keyedAccess,line,maxTransitionsPerProperty,propertyNames,reasons,transitionCount,transitions,transitionsPerName,worstState",
+      "identity": "map-churn|src/analysis/findings.ts|computeFindings|anchor,column,count,exampleMaps,file,functionName,icType,inlinedCount,key,keyedAccess,line,maxTransitionsPerProperty,propertyNames,reasons,receiver,receiverTypes,transitionCount,transitions,transitionsPerName,worstState",
       "kind": "map-churn",
       "file": "src/analysis/findings.ts",
       "functionName": "computeFindings",
-      "summary": "33 map transitions created in one function (properties: icType, key, worstState, transitions, keyedAccess, exampleMaps, file, functionName, … +10 more)"
+      "summary": "42 map transitions created in one function (properties: icType, key, worstState, transitions, keyedAccess, exampleMaps, receiver, receiverTypes, … +12 more)"
     },
     {
       "identity": "map-churn|src/analysis/findings.ts|finding|column,evidence,explanation,file,functionName,line,severity,suggestedFix,summary",
@@ -35,7 +35,7 @@
       "kind": "map-churn",
       "file": "src/tools/listIcs.ts",
       "functionName": "",
-      "summary": "83 map transitions created in one function (properties: sessionId, states, types, file, includeTransitions, maxTransitions, fromMark, toMark, … +38 more)"
+      "summary": "81 map transitions created in one function (properties: sessionId, states, types, file, includeTransitions, maxTransitions, fromMark, toMark, … +38 more)"
     },
     {
       "identity": "megamorphic-ic|src/parser/mapDetails.ts|parseProperty|KeyedLoadIC",

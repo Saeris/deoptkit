@@ -21,7 +21,7 @@ deoptkit ships several surfaces over one engine, all from the `deoptkit` package
 | **MCP server** (`deoptkit` / `deoptkit mcp`) | Eleven tools + a prompt that let an AI agent profile a workload, get ranked findings, drill in, and verify fixes.                    |
 | **`deoptkit ci`**                            | Snapshot-style regression gate: fails CI when a change introduces new structural findings (megamorphic ICs, deopt loops, map churn). |
 | **`deoptkit lsp`**                           | A language server that publishes findings as inline editor diagnostics (squiggles + Problems panel).                                 |
-| **`deoptkit/harness`**                       | `mark()` / `observed()` — plant in-log window markers and warm up hot code in benchmark scripts.                                     |
+| **`deoptkit/harness`**                       | `mark()` / `observed()` / `interleaved()` — plant in-log window markers, warm up hot code, and time variants against each other.     |
 | **`deoptkit/vitest`** + **`deoptkit/bench`** | A `vitest bench` preset that records V8 logs per worker, and `benchObserved()` to window each case.                                  |
 | **`deoptkit/serve`**                         | `driveServer()` — boot an SSR app in-process and drive it with requests so its runtime is observable.                                |
 | **library API** (`deoptkit`)                 | `parseLog`, `computeFindings`, `compareSessions`, `runWorkload`, … for building your own tooling.                                    |
@@ -62,7 +62,7 @@ The server advertises `instructions` describing the workflow, so a connected age
 
 Drill-down tools when a finding needs more context: `get_function` (annotated source + its ICs/deopts/ticks), `get_map` (a hidden class's transition chain and which call sites it polluted), `list_ics`, `list_deopts`, `list_functions`, `get_profile` (the call tree: who calls the hot function, top-down or bottom-up), `load_log` (analyze an existing `v8.log`), `load_manifest` (load every log from a vitest bench run), `list_sessions`.
 
-> **Warm-up matters.** V8 only optimizes hot code, so profile a workload that runs the target thousands of times — the `observed()` helper below encodes this. For libraries, profile the **built** output, not source: bundling changes shapes and inlining. The server flags cold runs: `profile_run` and `load_log` return `quality.warnings` when no user function reached an optimizing tier or no profiler ticks were recorded.
+> **Warm-up matters.** V8 only optimizes hot code, so profile a workload that runs the target thousands of times — the `observed()` helper below encodes this. For libraries, profile the **built** output, not source: bundling changes shapes and inlining. The server flags cold runs: `profile_run` and `load_log` return `quality.warnings` when no user function reached an optimizing tier, no profiler ticks were recorded, or the ticks are too sparse to rank by (`sparse-ticks`: IC and map logging starved the sampler; profile once more with `categories: ["profile"]` for the call tree). `get_findings` also lists the files on the page that have no source map under `unmapped`, so a bundle built without one is not mistaken for the source.
 
 ## Benchmarking your own code
 
@@ -80,6 +80,24 @@ observed("parse record", (i) => parseRecord(inputs[i % inputs.length]), {
 ```
 
 Then `profile_run { command: ["node", "bench/parse.bench.mjs"] }` and window the findings with `fromMark: "parse_record_start", toMark: "parse_record_end"`.
+
+To check that a fix is also faster, time the two versions against each other in one process with `interleaved()`: every round runs each variant once in rotating order, and the medians over rounds are what to compare (back-to-back before/after runs on a busy machine drift by 30% or more).
+
+```js
+import { interleaved } from "deoptkit/harness";
+import { parseRecord as before } from "../dist-before/index.mjs";
+import { parseRecord as after } from "../dist/index.mjs";
+
+const { variants } = interleaved(
+  "parse record",
+  {
+    before: (i) => before(inputs[i % inputs.length]),
+    after: (i) => after(inputs[i % inputs.length])
+  },
+  { rounds: 9, iterations: 20_000 }
+);
+console.log(variants.before.medianMs, variants.after.medianMs);
+```
 
 Schema-driven inputs (Valibot + [Valimock](https://github.com/Saeris/valimock)) are the easiest way to get _realistically varied_ shapes — see [docs/recipes.md](../../docs/recipes.md).
 
@@ -147,12 +165,15 @@ This repository gates itself the same way: `bench/parse.bench.mjs` parses a fixt
 
 ## What the signals mean
 
-| Signal             | What it tells you                                                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Megamorphic IC** | A property/call site saw 5+ object shapes; V8 fell back to generic hash lookups there                                                                                           |
-| **Deopt loop**     | TurboFan repeatedly optimized and discarded the same code — type instability after warm-up                                                                                      |
-| **Map churn**      | One constructor/site produces many hidden classes for conceptually one type (conditional or variably-ordered property init) — the root cause behind polymorphic reads elsewhere |
-| **Profile ticks**  | Where CPU time actually goes; severity ranking weights every other signal by this                                                                                               |
+| Signal              | What it tells you                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Megamorphic IC**  | A property/call site saw 5+ object shapes; V8 fell back to generic hash lookups there                                                                                           |
+| **Deopt loop**      | TurboFan repeatedly optimized and discarded the same code — type instability after warm-up                                                                                      |
+| **Map churn**       | One constructor/site produces many hidden classes for conceptually one type (conditional or variably-ordered property init) — the root cause behind polymorphic reads elsewhere |
+| **Dictionary mode** | Objects at a store site left fast-properties mode (keyed stores past V8's 12-field soft limit, or `delete`); every access on them is a hash lookup                              |
+| **Profile ticks**   | Where CPU time actually goes; severity ranking weights every other signal by this                                                                                               |
+
+IC findings also say what reached the site: `receiver: "string"` means polymorphism over V8's own string representations (not fixable by property order), `"array"` means arrays differing only by elements kind (keep each array's element type uniform), and both rank below object-shape polymorphism.
 
 ## Contributing
 

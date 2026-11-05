@@ -2,6 +2,15 @@ import type { ProfileModel } from "../model/logModel";
 import { isUserCode } from "./findings";
 import { rowFromKey } from "./window";
 
+/** A builtin or dependency function whose self ticks were charged to a user frame. */
+export interface FoldedFrame {
+  functionName: string;
+  file: string | undefined;
+  line: number | undefined;
+  column: number | undefined;
+  selfTicks: number;
+}
+
 export interface ProfileNode {
   functionName: string;
   file: string | undefined;
@@ -9,6 +18,11 @@ export interface ProfileNode {
   column: number | undefined;
   selfTicks: number;
   totalTicks: number;
+  /**
+   * With justMyCode, the non-user functions that were actually executing when this
+   * node received a self tick, heaviest first: what the folded time was spent in.
+   */
+  folded?: FoldedFrame[];
   children: ProfileNode[];
 }
 
@@ -33,11 +47,14 @@ export interface ProfileTree {
 interface TrieNode {
   node: ProfileNode;
   children: Map<string, TrieNode>;
+  /** Function key of the innermost dropped frame -> self ticks charged to this node for it. */
+  folded: Map<string, number>;
 }
 
 const newTrieNode = (key: string): TrieNode => ({
   node: { ...rowFromKey(key), children: [] },
-  children: new Map()
+  children: new Map(),
+  folded: new Map()
 });
 
 /**
@@ -48,7 +65,9 @@ const newTrieNode = (key: string): TrieNode => ({
  *
  * With `justMyCode`, frames outside user code are dropped, so a builtin or dependency
  * called from user code counts as time of the nearest user frame: what an agent
- * editing that code needs, since it cannot change the builtin.
+ * editing that code needs, since it cannot change the builtin. The node remembers
+ * which dropped function was executing, because a bench callback that calls straight
+ * into a library otherwise shows 100% self time with nothing to say where it went.
  */
 export const buildProfileTree = (
   profile: ProfileModel,
@@ -84,10 +103,28 @@ export const buildProfileTree = (
     }
     // The executing function is the path's end top-down and its root bottom-up.
     const executing = options.view === "top-down" ? last : first;
-    if (executing !== undefined) executing.node.selfTicks += 1;
+    if (executing === undefined) continue;
+    executing.node.selfTicks += 1;
+    const innermost = frames[0];
+    if (innermost !== kept[0])
+      executing.folded.set(
+        innermost,
+        (executing.folded.get(innermost) ?? 0) + 1
+      );
   }
 
   const threshold = (options.minPercent / 100) * attributedTicks;
+  const foldedOf = (trie: TrieNode): Pick<ProfileNode, "folded"> => {
+    const frames = [...trie.folded]
+      .filter(([, selfTicks]) => selfTicks >= threshold)
+      .toSorted(([, a], [, b]) => b - a)
+      .slice(0, options.limit)
+      .map(([key, selfTicks]) => {
+        const { functionName, file, line, column } = rowFromKey(key);
+        return { functionName, file, line, column, selfTicks };
+      });
+    return frames.length === 0 ? {} : { folded: frames };
+  };
   const prune = (
     level: Map<string, TrieNode>,
     depth: number
@@ -97,9 +134,10 @@ export const buildProfileTree = (
       .filter(({ node }) => node.totalTicks >= threshold)
       .toSorted((a, b) => b.node.totalTicks - a.node.totalTicks)
       .slice(0, options.limit)
-      .map(({ node, children }) => ({
-        ...node,
-        children: prune(children, depth + 1)
+      .map((trie) => ({
+        ...trie.node,
+        ...foldedOf(trie),
+        children: prune(trie.children, depth + 1)
       }));
   };
 
