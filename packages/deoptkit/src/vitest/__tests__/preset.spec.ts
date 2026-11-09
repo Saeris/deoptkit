@@ -1,4 +1,5 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import {
   mkdtemp,
   readdir,
@@ -161,6 +162,34 @@ describe("deoptKit vitest preset", () => {
         await readFile(join(dir, "manifest.json"), "utf8")
       ) as { logfiles: string[] };
       expect(manifest.logfiles.toSorted()).toEqual([fresh, reused].toSorted());
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Vitest runs this teardown before it waits for its workers to exit, and V8 writes
+  // the end of a log as the process exits. A teardown that read a log while its worker
+  // was still exiting dropped findings from findings.json on Windows runners.
+  it("waits for each log's worker to exit before reading the log", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deoptkit-exit-"));
+    try {
+      deoptKit({ outDir: dir });
+      setup({ config: { coverage: { enabled: false } } });
+      // A stand-in worker: it names its log the way the preset's `%p` does, and writes
+      // the last line half a second later, just before it exits.
+      const worker = spawn(process.execPath, [
+        "-e",
+        `const { appendFileSync, writeFileSync } = require("node:fs");
+         const log = require("node:path").join(${JSON.stringify(dir)}, "v8-" + process.pid + ".log");
+         writeFileSync(log, "");
+         setTimeout(() => appendFileSync(log, "the end\\n"), 500);`
+      ]);
+      const log = join(dir, `v8-${String(worker.pid)}.log`);
+      while (!existsSync(log)) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await teardown();
+      expect(readFileSync(log, "utf8")).toBe("the end\n");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

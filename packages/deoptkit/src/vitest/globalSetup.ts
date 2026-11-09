@@ -48,6 +48,45 @@ const existingLogs = (outDir: string): Map<string, number> =>
       .map((name) => [name, statSync(join(outDir, name)).mtimeMs])
   );
 
+/** The worker writing `v8-<pid>.log`: the preset names each log with V8's `%p`. */
+const writerOf = (logfile: string): number | undefined => {
+  const pid = /v8-(\d+)\.log$/u.exec(logfile)?.[1];
+  return pid === undefined ? undefined : Number(pid);
+};
+
+const isRunning = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to another user.
+    return isRecord(error) && error["code"] === "EPERM";
+  }
+};
+
+/**
+ * How long the teardown waits for the workers to finish their logs. Vitest starts
+ * stopping a worker when its file ends, but waits for the exit only when it closes the
+ * pool, after this teardown. V8 writes the end of a log as the process exits (about 7%
+ * of one measured log), so a log read before then is missing it: on Windows runners
+ * that dropped findings from `findings.json`. Vitest kills a worker 500 ms after asking
+ * it to stop, so an isolated worker is gone well within this.
+ */
+const WRITER_EXIT_WAIT_MS = 10_000;
+
+/** Wait until no log's writer is running, or the time is up. Returns the writers still running. */
+const waitForWriters = async (logfiles: string[]): Promise<number[]> => {
+  const deadline = Date.now() + WRITER_EXIT_WAIT_MS;
+  let running = logfiles
+    .map(writerOf)
+    .filter((pid): pid is number => pid !== undefined && pid !== process.pid);
+  for (;;) {
+    running = running.filter(isRunning);
+    if (running.length === 0 || Date.now() >= deadline) return running;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+};
+
 const requireOutDir = (): string => {
   const outDir = process.env["DEOPTKIT_OUT_DIR"];
   if (outDir === undefined) {
@@ -118,6 +157,11 @@ export const teardown = async (): Promise<void> => {
     // that file, so a name seen before still counts once its time has moved.
     if (logsBefore.get(name) === (await stat(logfile)).mtimeMs) continue;
     logfiles.push(logfile);
+  }
+  for (const pid of await waitForWriters(logfiles)) {
+    process.stderr.write(
+      `deoptkit: worker ${String(pid)} was still running ${String(WRITER_EXIT_WAIT_MS / 1000)} s after the tests ended, so its log may be incomplete. With \`isolate: false\`, Vitest keeps workers alive until after this teardown.\n`
+    );
   }
   const manifest: DeoptKitManifest = {
     createdAt: new Date().toISOString(),
