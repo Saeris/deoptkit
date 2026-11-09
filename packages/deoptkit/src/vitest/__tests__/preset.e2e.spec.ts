@@ -11,7 +11,7 @@ import type { LogModel } from "../../model/logModel";
 import { parseLog } from "../../parser/parseLog";
 import { SourceMapResolver } from "../../sourcemaps/resolver";
 import type { DeoptKitFindingsFile, DeoptKitManifest } from "../globalSetup";
-import { createE2eProject, ensureDist } from "./e2eProject";
+import { createE2eProject } from "./e2eProject";
 import type { E2eProject } from "./e2eProject";
 
 describe("deoptKit vitest preset, end to end", () => {
@@ -26,7 +26,6 @@ describe("deoptKit vitest preset, end to end", () => {
     ) as DeoptKitManifest;
 
   beforeAll(async () => {
-    ensureDist();
     project = await createE2eProject({ name: "runner" });
     run = project.run();
     // Parse leniently: the first test asserts the run and manifest, so a broken run
@@ -156,7 +155,6 @@ describe("deoptKit vitest preset with an iteration limit, end to end", () => {
   let run: SpawnSyncReturns<string>;
 
   beforeAll(async () => {
-    ensureDist();
     project = await createE2eProject({
       name: "limit",
       presetOptions: "iterations: 40",
@@ -221,7 +219,6 @@ describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
   const output = (): string => `${run.stdout}\n${run.stderr}`;
 
   beforeAll(async () => {
-    ensureDist();
     // With the limit too: Vitest imports the provider through Node's own loader in
     // this mode, a different path from the module runner's.
     project = await createE2eProject({
