@@ -48,6 +48,18 @@ const existingLogs = (outDir: string): Map<string, number> =>
       .map((name) => [name, statSync(join(outDir, name)).mtimeMs])
   );
 
+/**
+ * Whether the project shares workers between files (`isolate: false`). Vitest then stops
+ * them only when it closes the pool, after this teardown, so waiting for them is futile.
+ */
+const isolationOff = (project: unknown): boolean => {
+  if (!isRecord(project)) return false;
+  const config = project["config"];
+  return isRecord(config) && config["isolate"] === false;
+};
+
+let workersOutliveTeardown = false;
+
 /** The worker writing `v8-<pid>.log`: the preset names each log with V8's `%p`. */
 const writerOf = (logfile: string): number | undefined => {
   const pid = /v8-(\d+)\.log$/u.exec(logfile)?.[1];
@@ -70,7 +82,8 @@ const isRunning = (pid: number): boolean => {
  * pool, after this teardown. V8 writes the end of a log as the process exits (about 7%
  * of one measured log), so a log read before then is missing it: on Windows runners
  * that dropped findings from `findings.json`. Vitest kills a worker 500 ms after asking
- * it to stop, so an isolated worker is gone well within this.
+ * it to stop, so an isolated worker is gone well within this. A shared one
+ * (`isolate: false`) outlives the teardown, so the teardown does not wait for it.
  */
 const WRITER_EXIT_WAIT_MS = 10_000;
 
@@ -141,6 +154,7 @@ export const setup = (project?: unknown): void => {
     );
   }
   logsBefore = existingLogs(outDir);
+  workersOutliveTeardown = isolationOff(project);
 };
 
 /**
@@ -158,10 +172,16 @@ export const teardown = async (): Promise<void> => {
     if (logsBefore.get(name) === (await stat(logfile)).mtimeMs) continue;
     logfiles.push(logfile);
   }
-  for (const pid of await waitForWriters(logfiles)) {
+  if (workersOutliveTeardown) {
     process.stderr.write(
-      `deoptkit: worker ${String(pid)} was still running ${String(WRITER_EXIT_WAIT_MS / 1000)} s after the tests ended, so its log may be incomplete. With \`isolate: false\`, Vitest keeps workers alive until after this teardown.\n`
+      "deoptkit: with `isolate: false`, Vitest keeps its workers alive until after this teardown, so their logs are not finished yet and findings.json may miss findings. Load the logs once Vitest exits (load_manifest), or set `isolate: true` for observation runs.\n"
     );
+  } else {
+    for (const pid of await waitForWriters(logfiles)) {
+      process.stderr.write(
+        `deoptkit: worker ${String(pid)} was still running ${String(WRITER_EXIT_WAIT_MS / 1000)} s after the tests ended, so its log may be incomplete.\n`
+      );
+    }
   }
   const manifest: DeoptKitManifest = {
     createdAt: new Date().toISOString(),

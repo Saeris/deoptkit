@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { generateWorkloadLog } from "../../parser/__tests__/helpers";
 import { setup, teardown } from "../globalSetup";
 import type { DeoptKitFindingsFile } from "../globalSetup";
@@ -191,6 +191,33 @@ describe("deoptKit vitest preset", () => {
       await teardown();
       expect(readFileSync(log, "utf8")).toBe("the end\n");
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // With `isolate: false` Vitest stops its workers only after this teardown, so waiting
+  // for them would add the whole timeout to every run and still read unfinished logs.
+  it("does not wait for shared workers, and says their logs may be unfinished", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deoptkit-shared-"));
+    const worker = spawn(process.execPath, [
+      "-e",
+      `require("node:fs").writeFileSync(require("node:path").join(${JSON.stringify(dir)}, "v8-" + process.pid + ".log"), "");
+       setTimeout(() => {}, 5000);`
+    ]);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      deoptKit({ outDir: dir });
+      setup({ config: { coverage: { enabled: false }, isolate: false } });
+      while (!existsSync(join(dir, `v8-${String(worker.pid)}.log`))) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const started = performance.now();
+      await teardown();
+      expect(performance.now() - started).toBeLessThan(2_000);
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining("isolate"));
+    } finally {
+      stderr.mockRestore();
+      worker.kill();
       await rm(dir, { recursive: true, force: true });
     }
   });
