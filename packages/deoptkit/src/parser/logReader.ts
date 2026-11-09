@@ -1,6 +1,42 @@
-import { createReadStream } from "node:fs";
+import { open as fsOpen } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { parseLine } from "./csv";
+
+const isBusy = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  error.code === "EBUSY";
+
+export interface OpenLogOptions {
+  /** How to open the file; tests stand in a lock here. */
+  open?: (path: string, flags: "r") => Promise<FileHandle>;
+  /** How long to wait out a lock before failing (default 10 s). */
+  waitMs?: number;
+}
+
+/**
+ * Open a log for reading, waiting out a brief lock. On Windows another process can hold
+ * a file for a moment after its writer closes it (an antivirus scan is the usual one),
+ * and opening it then fails with EBUSY. Logs are read right after their writer exits
+ * (the bench teardown, `profile_run`, `deoptkit ci`), and on a GitHub Windows runner the
+ * bench teardown failed this way. Any other error fails at once.
+ */
+export const openLog = async (
+  path: string,
+  { open = fsOpen, waitMs = 10_000 }: OpenLogOptions = {}
+): Promise<FileHandle> => {
+  const deadline = Date.now() + waitMs;
+  for (let delay = 25; ; delay = Math.min(delay * 2, 1_000)) {
+    try {
+      return await open(path, "r");
+    } catch (error) {
+      if (!isBusy(error) || Date.now() + delay > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+};
 
 /**
  * Receives the fields following the command name on a matching log line. Elements are
@@ -26,8 +62,9 @@ export const readLog = async (
   handlers: Record<string, LineHandler | undefined>
 ): Promise<ReadWarnings> => {
   const warnings: ReadWarnings = { unknownCommands: new Map(), badLines: 0 };
+  // The stream closes the handle when it ends or fails.
   const lines = createInterface({
-    input: createReadStream(path),
+    input: (await openLog(path)).createReadStream(),
     crlfDelay: Infinity
   });
   for await (const line of lines) {

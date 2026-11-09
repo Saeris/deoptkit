@@ -80,8 +80,7 @@ const isRunning = (pid: number): boolean => {
  * How long the teardown waits for the workers to finish their logs. Vitest starts
  * stopping a worker when its file ends, but waits for the exit only when it closes the
  * pool, after this teardown. V8 writes the end of a log as the process exits (about 7%
- * of one measured log), so a log read before then is missing it: on Windows runners
- * that dropped findings from `findings.json`. Vitest kills a worker 500 ms after asking
+ * of one measured log), so a log read before then is missing it. Vitest kills a worker 500 ms after asking
  * it to stop, so an isolated worker is gone well within this. A shared one
  * (`isolate: false`) outlives the teardown, so the teardown does not wait for it.
  */
