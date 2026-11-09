@@ -72,6 +72,10 @@ export default defineConfig({
  * points at `dist/`. Always rebuild: a `dist/` left over from before the current
  * source changes would make the project run stale code and pass or fail for the
  * wrong reasons. `vp pack` takes about a second.
+ *
+ * Called once per run, from the global setup (`src/__tests__/buildDist.ts`), never from
+ * a spec: `vp pack` empties `dist/` first, so a rebuild in one test file breaks another
+ * file that is running the package at the same moment.
  */
 export const ensureDist = (): void => {
   const result = spawnSync(process.execPath, [VP_BIN, "pack"], {

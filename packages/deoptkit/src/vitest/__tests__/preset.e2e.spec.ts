@@ -11,7 +11,7 @@ import type { LogModel } from "../../model/logModel";
 import { parseLog } from "../../parser/parseLog";
 import { SourceMapResolver } from "../../sourcemaps/resolver";
 import type { DeoptKitFindingsFile, DeoptKitManifest } from "../globalSetup";
-import { createE2eProject, ensureDist } from "./e2eProject";
+import { createE2eProject } from "./e2eProject";
 import type { E2eProject } from "./e2eProject";
 
 describe("deoptKit vitest preset, end to end", () => {
@@ -26,7 +26,6 @@ describe("deoptKit vitest preset, end to end", () => {
     ) as DeoptKitManifest;
 
   beforeAll(async () => {
-    ensureDist();
     project = await createE2eProject({ name: "runner" });
     run = project.run();
     // Parse leniently: the first test asserts the run and manifest, so a broken run
@@ -134,7 +133,18 @@ describe("deoptKit vitest preset, end to end", () => {
       (finding) =>
         finding.kind === "megamorphic-ic" && finding.evidence["key"] === "x"
     );
-    expect(site?.original?.file.endsWith("lib.ts")).toBe(true);
+    // This has failed on Windows runners only, while the test above found the same
+    // finding in the same logs. Say what the teardown saw: it reports a log it could not
+    // analyze on the child's stderr, which is otherwise discarded.
+    if (site?.original === undefined) {
+      const logs = new Set(payload.findings.map(({ script }) => script));
+      throw new Error(
+        `findings.json has no source-mapped megamorphic "x" finding (${site === undefined ? "none at all" : `one at ${site.file}:${String(site.line)}, unmapped`}). ` +
+          `It holds ${String(payload.findings.length)} finding(s) from ${String(logs.size)} log(s); the manifest lists ${String(readManifest().logfiles.length)}.\n` +
+          `vitest stderr:\n${run.stderr.slice(-3000)}`
+      );
+    }
+    expect(site.original.file.endsWith("lib.ts")).toBe(true);
     expect(site?.original?.line).toBe(2);
 
     const diagnostics = toDiagnostics(payload, () => false);
@@ -156,7 +166,6 @@ describe("deoptKit vitest preset with an iteration limit, end to end", () => {
   let run: SpawnSyncReturns<string>;
 
   beforeAll(async () => {
-    ensureDist();
     project = await createE2eProject({
       name: "limit",
       presetOptions: "iterations: 40",
@@ -221,7 +230,6 @@ describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
   const output = (): string => `${run.stdout}\n${run.stderr}`;
 
   beforeAll(async () => {
-    ensureDist();
     // With the limit too: Vitest imports the provider through Node's own loader in
     // this mode, a different path from the module runner's.
     project = await createE2eProject({

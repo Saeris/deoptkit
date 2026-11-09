@@ -34,6 +34,8 @@ export default defineConfig({
     // suite must not run as part of this checkout.
     exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
     environment: "node",
+    // Builds dist/ once, before any file runs; see the module for why not per spec.
+    globalSetup: ["./src/__tests__/buildDist.ts"],
     passWithNoTests: true
   }
 });

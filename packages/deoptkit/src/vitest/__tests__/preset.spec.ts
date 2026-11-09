@@ -1,4 +1,5 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import {
   mkdtemp,
   readdir,
@@ -10,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { generateWorkloadLog } from "../../parser/__tests__/helpers";
 import { setup, teardown } from "../globalSetup";
 import type { DeoptKitFindingsFile } from "../globalSetup";
@@ -115,7 +116,7 @@ describe("deoptKit vitest preset", () => {
   it("writes a manifest and the findings interchange for produced logs on teardown", async () => {
     deoptKit({ outDir });
     setup({ config: { coverage: { enabled: false } } });
-    const logfile = join(outDir, "v8-12345.log");
+    const logfile = join(outDir, "v8-workload.log");
     await rename(generateWorkloadLog("map-churn", outDir), logfile);
     await writeFile(join(outDir, "unrelated.txt"), "ignore me\n");
     await teardown();
@@ -145,8 +146,10 @@ describe("deoptKit vitest preset", () => {
     const dir = await mkdtemp(join(tmpdir(), "deoptkit-runs-"));
     try {
       deoptKit({ outDir: dir });
-      const stale = join(dir, "v8-1.log");
-      const reused = join(dir, "v8-2.log");
+      // Names without a pid: the teardown waits for a log's writer to exit, and on
+      // Linux pids 1 and 2 always belong to running processes.
+      const stale = join(dir, "v8-stale.log");
+      const reused = join(dir, "v8-reused.log");
       const past = new Date(Date.now() - 60_000);
       for (const logfile of [stale, reused]) {
         await writeFile(logfile, "");
@@ -154,7 +157,7 @@ describe("deoptKit vitest preset", () => {
       }
       setup({ config: { coverage: { enabled: false } } });
       await writeFile(reused, "");
-      const fresh = join(dir, "v8-3.log");
+      const fresh = join(dir, "v8-fresh.log");
       await writeFile(fresh, "");
       await teardown();
       const manifest = JSON.parse(
@@ -162,6 +165,61 @@ describe("deoptKit vitest preset", () => {
       ) as { logfiles: string[] };
       expect(manifest.logfiles.toSorted()).toEqual([fresh, reused].toSorted());
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Vitest runs this teardown before it waits for its workers to exit, and V8 writes
+  // the end of a log as the process exits. A teardown that read a log while its worker
+  // was still exiting dropped findings from findings.json on Windows runners.
+  it("waits for each log's worker to exit before reading the log", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deoptkit-exit-"));
+    try {
+      deoptKit({ outDir: dir });
+      setup({ config: { coverage: { enabled: false } } });
+      // A stand-in worker: it names its log the way the preset's `%p` does, and writes
+      // the last line half a second later, just before it exits.
+      const worker = spawn(process.execPath, [
+        "-e",
+        `const { appendFileSync, writeFileSync } = require("node:fs");
+         const log = require("node:path").join(${JSON.stringify(dir)}, "v8-" + process.pid + ".log");
+         writeFileSync(log, "");
+         setTimeout(() => appendFileSync(log, "the end\\n"), 500);`
+      ]);
+      const log = join(dir, `v8-${String(worker.pid)}.log`);
+      while (!existsSync(log)) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await teardown();
+      expect(readFileSync(log, "utf8")).toBe("the end\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // With `isolate: false` Vitest stops its workers only after this teardown, so waiting
+  // for them would add the whole timeout to every run and still read unfinished logs.
+  it("does not wait for shared workers, and says their logs may be unfinished", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deoptkit-shared-"));
+    const worker = spawn(process.execPath, [
+      "-e",
+      `require("node:fs").writeFileSync(require("node:path").join(${JSON.stringify(dir)}, "v8-" + process.pid + ".log"), "");
+       setTimeout(() => {}, 5000);`
+    ]);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      deoptKit({ outDir: dir });
+      setup({ config: { coverage: { enabled: false }, isolate: false } });
+      while (!existsSync(join(dir, `v8-${String(worker.pid)}.log`))) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const started = performance.now();
+      await teardown();
+      expect(performance.now() - started).toBeLessThan(2_000);
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining("isolate"));
+    } finally {
+      stderr.mockRestore();
+      worker.kill();
       await rm(dir, { recursive: true, force: true });
     }
   });
