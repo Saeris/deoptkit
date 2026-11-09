@@ -1,6 +1,21 @@
 # Changelog
 
 
+
+## 0.3.0
+<sub>2026-11-09</sub>
+
+- [#4](https://github.com/Saeris/deoptkit/pull/4)  *(minor)* Thanks [@Saeris](https://github.com/Saeris)!
+  Findings learned from the first passes over real projects. A new `dictionary-mode` finding reports objects that V8 normalized out of fast-properties mode (keyed stores past the 12-field soft limit, or `delete`) at the store that did it, instead of counting those normalizations as map churn; it is gated by `deoptkit ci`. Megamorphic and polymorphic IC findings now classify their receivers from the printed maps: a site polymorphic over string representations or over array elements kinds says so in its summary and evidence (`receiver`, `receiverTypes`, `elementsKinds`) and ranks below object-shape polymorphism, since property-order advice does not apply to it. Session quality reports `tickIntervalMs` and warns `sparse-ticks` when logging starved the profiler, pointing at a `categories: ["profile"]` pass. `get_findings` lists the files on the page that have no source map under `unmapped`. `get_profile` nodes carry `folded`, the builtins and dependency functions whose time just-my-code charged to them. `deoptkit/harness` adds `interleaved()` for before/after timing by rotating variants within one process, and `observed()` returns `durationMs`.
+- [#6](https://github.com/Saeris/deoptkit/pull/6)  *(minor)* Thanks [@Saeris](https://github.com/Saeris)!
+  Findings carry `heat`, the share of profile self ticks their severity was scored with, and `deoptkit ci` marks the findings its baseline accepts with `baselined` in `.deopt/findings.json`. `deoptkit lsp` publishes baselined and cold (never sampled) findings as hints, which editors keep out of the Problems panel, so the panel lists only findings that are new and actually ran. The VSCode extension gains a `deoptkit.enable` setting and a **deoptkit: Toggle Enable/Disable** command that stops or starts the language server for the workspace.
+- [#7](https://github.com/Saeris/deoptkit/pull/7)  *(minor)* Thanks [@Saeris](https://github.com/Saeris)!
+  `vitest bench` profiles can now run each case a fixed number of times. Set `deoptKit({ iterations })` and select deoptkit's benchmark provider with `benchmark: { provider: "deoptkit/vitest/provider" }`: each case then runs exactly that many times, or fewer when a bench asks for fewer, with no time budget and no warm-up. The logs stay bounded with every category on, and the findings repeat from run to run. `deoptkit ci --manifest .deopt/manifest.json` gates such a run against a baseline, the same way it gates a script. The manifest a run writes now lists only that run's logs, not every log left in the output directory by earlier runs.
+- [#8](https://github.com/Saeris/deoptkit/pull/8)  *(patch)* Thanks [@Saeris](https://github.com/Saeris)!
+  The `deoptkit/vitest` teardown now waits for each bench worker to exit before it reads that worker's V8 log. Vitest runs global teardowns before it waits for its workers, and V8 writes the end of a log as the process exits, so the teardown could analyze a log before its last part was written.
+- [#9](https://github.com/Saeris/deoptkit/pull/9)  *(patch)* Thanks [@Saeris](https://github.com/Saeris)!
+  deoptkit now waits out a brief lock when it opens a V8 log, instead of failing. On Windows another process, usually an antivirus scan, can hold a file for a moment after its writer closes it. The bench teardown, `profile_run` and `deoptkit ci` all read a log right after it is written, and failed then with `EBUSY`; in the bench teardown, that left `findings.json` without any of the log's findings.
+
 ## 0.2.0
 <sub>2026-11-04</sub>
 
