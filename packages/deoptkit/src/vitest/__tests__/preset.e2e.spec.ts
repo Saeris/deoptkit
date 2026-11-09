@@ -1,7 +1,10 @@
 import type { SpawnSyncReturns } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { computeFindings } from "../../analysis/findings";
+import { runCi } from "../../cli/ci";
 import type { Finding } from "../../analysis/findings";
 import { toDiagnostics } from "../../lsp/server";
 import type { LogModel } from "../../model/logModel";
@@ -144,6 +147,72 @@ describe("deoptKit vitest preset, end to end", () => {
   });
 });
 
+/** tinybench calls a function once when it is added, to see whether it returns a promise. */
+const DETECTION_CALL = 1;
+const PROVIDER = 'provider: "deoptkit/vitest/provider"';
+
+describe("deoptKit vitest preset with an iteration limit, end to end", () => {
+  let project: E2eProject;
+  let run: SpawnSyncReturns<string>;
+
+  beforeAll(async () => {
+    ensureDist();
+    project = await createE2eProject({
+      name: "limit",
+      presetOptions: "iterations: 40",
+      benchmarkOptions: PROVIDER
+    });
+    run = project.run();
+  }, 120_000);
+
+  afterAll(async () => {
+    await project.cleanup();
+    delete process.env["DEOPTKIT_OUT_DIR"];
+    delete process.env["DEOPTKIT_ITERATIONS"];
+  });
+
+  // Under logging, a time budget makes a log as large as the machine is fast; the
+  // limit is what bounds it. Only a real run proves that Vitest loads the provider
+  // from the built package and that the global setup accepts the path Vitest resolves.
+  it("runs the case exactly the limit's count", () => {
+    if (run.status !== 0) {
+      throw new Error(
+        `vitest bench exited ${String(run.status)}:\n${run.stdout}\n${run.stderr}`
+      );
+    }
+    expect(project.calls()).toBe(40 + DETECTION_CALL);
+  });
+
+  // A fixed count is what lets `deoptkit ci --manifest` gate a bench run like a
+  // script: run it again and the structural findings are the same.
+  it("gives deoptkit ci the same findings on a second run", async () => {
+    const gateDir = join(project.dir, ".gate");
+    const gate = async (): Promise<number> =>
+      runCi([
+        "--out-dir",
+        gateDir,
+        "--manifest",
+        join(project.outDir, "manifest.json")
+      ]);
+    await expect(gate()).resolves.toBe(0);
+    const [baselineFile] = await readdir(join(gateDir, "baselines"));
+    const baseline = JSON.parse(
+      readFileSync(join(gateDir, "baselines", baselineFile ?? ""), "utf8")
+    ) as { findings: { kind: string; functionName?: string }[] };
+    expect(baseline.findings).toContainEqual(
+      expect.objectContaining({ kind: "megamorphic-ic", functionName: "getX" })
+    );
+
+    const again = project.run();
+    if (again.status !== 0) {
+      throw new Error(
+        `vitest bench exited ${String(again.status)}:\n${again.stdout}\n${again.stderr}`
+      );
+    }
+    await expect(gate()).resolves.toBe(0);
+  }, 120_000);
+});
+
 describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
   let project: E2eProject;
   let run: SpawnSyncReturns<string>;
@@ -153,9 +222,12 @@ describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
 
   beforeAll(async () => {
     ensureDist();
+    // With the limit too: Vitest imports the provider through Node's own loader in
+    // this mode, a different path from the module runner's.
     project = await createE2eProject({
       name: "native",
-      presetOptions: "nativeEsm: true"
+      presetOptions: "nativeEsm: true, iterations: 40",
+      benchmarkOptions: PROVIDER
     });
     run = project.run();
     // Parse leniently: the first test asserts the run, so a broken run fails there
@@ -174,6 +246,16 @@ describe("deoptKit vitest preset in nativeEsm mode, end to end", () => {
   afterAll(async () => {
     await project.cleanup();
     delete process.env["DEOPTKIT_OUT_DIR"];
+    delete process.env["DEOPTKIT_ITERATIONS"];
+  });
+
+  it("applies the iteration limit under Node's own loader too", () => {
+    if (run.status !== 0) {
+      throw new Error(
+        `vitest bench exited ${String(run.status)}:\n${output()}`
+      );
+    }
+    expect(project.calls()).toBe(40 + DETECTION_CALL);
   });
 
   // Without the module runner V8 sees the shipped file, so the finding must land on the

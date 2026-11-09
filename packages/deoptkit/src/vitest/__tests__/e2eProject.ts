@@ -3,6 +3,7 @@ import type { SpawnSyncReturns } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   symlinkSync,
   unlinkSync,
   writeFileSync
@@ -33,26 +34,35 @@ export const shapes: Shape[] = [
 ];
 `;
 
-const PROBE = `import { test } from "vitest";
+// Records how many times the case ran, so a test can check the provider's count.
+const PROBE = `import { writeFileSync } from "node:fs";
+import { test } from "vitest";
 import { benchObserved } from "deoptkit/bench";
 import { getX, shapes } from "./lib.ts";
 
 test("get x", async ({ bench }) => {
+  let calls = 0;
   await benchObserved(bench, "get x", () => {
+    calls++;
     let sum = 0;
     for (let i = 0; i < 20_000; i++) sum += getX(shapes[i % shapes.length]!);
     return sum;
   }).run();
+  writeFileSync(new URL("./calls.txt", import.meta.url), String(calls));
 });
 `;
 
-const configFor = (outDir: string, presetOptions: string | undefined): string =>
+const configFor = (
+  outDir: string,
+  presetOptions: string | undefined,
+  benchmarkOptions: string | undefined
+): string =>
   `import { defineConfig } from "vitest/config";
 import { deoptKit } from "deoptkit/vitest";
 export default defineConfig({
   test: {
     ...deoptKit({ outDir: ${JSON.stringify(outDir)}${presetOptions === undefined ? "" : `, ${presetOptions}`} }),
-    benchmark: { include: ["**/*.bench.ts"] }
+    benchmark: { include: ["**/*.bench.ts"]${benchmarkOptions === undefined ? "" : `, ${benchmarkOptions}`} }
   }
 });
 `;
@@ -83,6 +93,8 @@ export interface E2eProject {
   configPath: string;
   /** Run `vitest bench --run` in the project and capture its output. */
   run: () => SpawnSyncReturns<string>;
+  /** How many times the probe's case function ran, or `undefined` if it never finished. */
+  calls: () => number | undefined;
   cleanup: () => Promise<void>;
 }
 
@@ -91,6 +103,8 @@ export interface E2eProjectOptions {
   name: string;
   /** Extra `deoptKit({ outDir, … })` properties, spliced in verbatim. */
   presetOptions?: string;
+  /** Extra `benchmark: { include, … }` properties, spliced in verbatim. */
+  benchmarkOptions?: string;
 }
 
 /**
@@ -109,7 +123,10 @@ export const createE2eProject = async (
 
   writeFileSync(join(dir, "lib.ts"), LIB);
   writeFileSync(join(dir, "probe.bench.ts"), PROBE);
-  writeFileSync(configPath, configFor(outDir, options.presetOptions));
+  writeFileSync(
+    configPath,
+    configFor(outDir, options.presetOptions, options.benchmarkOptions)
+  );
 
   const links = [
     [join(dir, "node_modules", "vitest"), VITEST_DIR],
@@ -123,6 +140,10 @@ export const createE2eProject = async (
     dir,
     outDir,
     configPath,
+    calls: () => {
+      const path = join(dir, "calls.txt");
+      return existsSync(path) ? Number(readFileSync(path, "utf8")) : undefined;
+    },
     run: () =>
       spawnSync(
         process.execPath,

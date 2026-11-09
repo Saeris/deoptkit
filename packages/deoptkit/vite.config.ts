@@ -15,6 +15,7 @@ export default defineConfig({
       harness: "./src/harness/index.ts",
       vitest: "./src/vitest/index.ts",
       "vitest-global-setup": "./src/vitest/globalSetup.ts",
+      "vitest-provider": "./src/vitest/provider.ts",
       bench: "./src/bench/index.ts",
       serve: "./src/serve/index.ts",
       lsp: "./src/lsp/server.ts"

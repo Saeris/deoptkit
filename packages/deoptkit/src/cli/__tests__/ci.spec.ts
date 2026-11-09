@@ -1,7 +1,16 @@
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { runWorkload } from "../../collect/runner";
 import { gitHubAnnotation, parseCiArgs, runCi } from "../ci";
 
 const WORKLOAD_DIR = join(
@@ -169,6 +178,67 @@ describe("deoptkit ci", () => {
       expect(found.kind.length).toBeGreaterThan(0);
     }
   }, 300_000);
+
+  // A vitest bench run has no script to rerun, so the gate reads the logs its manifest
+  // lists: every one of them, since a worker per test file means a regression can sit
+  // in any log. And it must fail loud when it cannot see the whole run, because a gate
+  // over part of one passes for the wrong reason.
+  it("gates the logs a vitest bench manifest lists", async () => {
+    const logs = join(dir, "logs");
+    await mkdir(logs, { recursive: true });
+    const manifest = join(dir, "manifest.json");
+    const gateDir = join(dir, ".deopt-vitest");
+    const record = async (workload: string, name: string): Promise<string> => {
+      await copyFile(join(WORKLOAD_DIR, `${workload}.js`), app);
+      const run = await runWorkload({
+        command: [process.execPath, app],
+        timeoutMs: 60_000
+      });
+      try {
+        const logfile = join(logs, name);
+        await copyFile(run.logfile, logfile);
+        return logfile;
+      } finally {
+        await rm(run.dir, { recursive: true, force: true });
+      }
+    };
+    const listing = async (logfiles: string[]): Promise<void> => {
+      await writeFile(manifest, JSON.stringify({ outDir: logs, logfiles }));
+    };
+    const gate = async (...flags: string[]): Promise<number> =>
+      runCi(["--out-dir", gateDir, ...flags, "--manifest", manifest]);
+
+    const first = await record("map-churn-fixed", "v8-1.log");
+    await listing([first, await record("map-churn-fixed", "v8-2.log")]);
+    await expect(gate()).resolves.toBe(0);
+    await expect(readdir(join(gateDir, "baselines"))).resolves.toHaveLength(1);
+    await expect(gate()).resolves.toBe(0);
+
+    // The regression is in the second worker's log only.
+    await listing([first, await record("map-churn", "v8-2.log")]);
+    await expect(gate()).resolves.toBe(1);
+    await expect(gate("--update")).resolves.toBe(0);
+    await expect(gate()).resolves.toBe(0);
+
+    await listing([]);
+    await expect(gate()).resolves.toBe(2);
+    await listing([first, join(logs, "v8-missing.log")]);
+    await expect(gate()).resolves.toBe(2);
+    await writeFile(manifest, "{}");
+    await expect(gate()).resolves.toBe(2);
+    await rm(manifest);
+    await expect(gate()).resolves.toBe(2);
+  }, 300_000);
+
+  it("parses --manifest as an input of its own", () => {
+    expect(parseCiArgs(["--manifest", "m.json"])).toMatchObject({
+      manifests: ["m.json"],
+      scripts: []
+    });
+    expect(parseCiArgs(["--manifest"])).toEqual({
+      error: "--manifest requires a value"
+    });
+  });
 
   it("formats GitHub annotations at the original source position", () => {
     const annotation = gitHubAnnotation({

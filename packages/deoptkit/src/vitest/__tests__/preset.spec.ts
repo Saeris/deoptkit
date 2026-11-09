@@ -5,6 +5,7 @@ import {
   readFile,
   rename,
   rm,
+  utimes,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,6 +26,7 @@ describe("deoptKit vitest preset", () => {
   afterAll(async () => {
     await rm(outDir, { recursive: true, force: true });
     delete process.env["DEOPTKIT_OUT_DIR"];
+    delete process.env["DEOPTKIT_ITERATIONS"];
   });
 
   it("configures the forks pool with the V8 flag set and per-pid logfiles", () => {
@@ -53,6 +55,52 @@ describe("deoptKit vitest preset", () => {
     });
   });
 
+  // The provider runs in forked workers and reads the limit from the environment they
+  // inherit. A limit left over from an earlier call would quietly cap a config that
+  // never asked for one, so leaving the option out must clear it.
+  it("hands an iteration limit to the workers and clears it when unset", () => {
+    deoptKit({ outDir, iterations: 500 });
+    expect(process.env["DEOPTKIT_ITERATIONS"]).toBe("500");
+    deoptKit({ outDir });
+    expect(process.env["DEOPTKIT_ITERATIONS"]).toBeUndefined();
+  });
+
+  it("rejects an iteration limit that is not a positive integer", () => {
+    for (const iterations of [0, -5, 1.5, Number.NaN]) {
+      expect(() => deoptKit({ outDir, iterations })).toThrow(
+        /positive integer/u
+      );
+    }
+  });
+
+  // Only deoptkit's provider applies the limit. Without it each case still runs for
+  // Vitest's time budget, so the run would write the very logs the limit was set to
+  // prevent while looking configured.
+  it("refuses an iteration limit that no provider will apply", () => {
+    deoptKit({ outDir, iterations: 100 });
+    const withProvider = (provider?: string): unknown => ({
+      config: { coverage: { enabled: false }, benchmark: { provider } }
+    });
+    expect(() => setup(withProvider())).toThrow(/deoptkit\/vitest\/provider/u);
+    expect(() => setup(withProvider("/repo/my-provider.mjs"))).toThrow(
+      /deoptkit\/vitest\/provider/u
+    );
+    // Vitest resolves the setting to the module's file, through links or not.
+    expect(() =>
+      setup(
+        withProvider("/repo/node_modules/deoptkit/dist/vitest-provider.mjs")
+      )
+    ).not.toThrow();
+    expect(() =>
+      setup(
+        withProvider("C:\\repo\\packages\\deoptkit\\dist\\vitest-provider.mjs")
+      )
+    ).not.toThrow();
+    // Without a limit, the provider is optional.
+    deoptKit({ outDir });
+    expect(() => setup(withProvider())).not.toThrow();
+  });
+
   // The whole observation is invalid under coverage instrumentation; failing loudly
   // beats silently reporting optimization behavior of instrumented code.
   it("refuses to run with coverage enabled", () => {
@@ -66,10 +114,10 @@ describe("deoptKit vitest preset", () => {
   // manifest but no findings leaves editors blind to everything the bench observed.
   it("writes a manifest and the findings interchange for produced logs on teardown", async () => {
     deoptKit({ outDir });
+    setup({ config: { coverage: { enabled: false } } });
     const logfile = join(outDir, "v8-12345.log");
     await rename(generateWorkloadLog("map-churn", outDir), logfile);
     await writeFile(join(outDir, "unrelated.txt"), "ignore me\n");
-    setup({ config: { coverage: { enabled: false } } });
     await teardown();
     const manifest = JSON.parse(
       await readFile(join(outDir, "manifest.json"), "utf8")
@@ -89,6 +137,34 @@ describe("deoptKit vitest preset", () => {
       true
     );
   }, 60_000);
+
+  // `deoptkit ci --manifest` gates the logs a manifest lists. The output directory
+  // keeps every earlier run's logs, so listing them all would gate old code. A worker
+  // that reuses an old pid rewrites that file, and its log belongs to this run.
+  it("lists only the logs this run wrote", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deoptkit-runs-"));
+    try {
+      deoptKit({ outDir: dir });
+      const stale = join(dir, "v8-1.log");
+      const reused = join(dir, "v8-2.log");
+      const past = new Date(Date.now() - 60_000);
+      for (const logfile of [stale, reused]) {
+        await writeFile(logfile, "");
+        await utimes(logfile, past, past);
+      }
+      setup({ config: { coverage: { enabled: false } } });
+      await writeFile(reused, "");
+      const fresh = join(dir, "v8-3.log");
+      await writeFile(fresh, "");
+      await teardown();
+      const manifest = JSON.parse(
+        await readFile(join(dir, "manifest.json"), "utf8")
+      ) as { logfiles: string[] };
+      expect(manifest.logfiles.toSorted()).toEqual([fresh, reused].toSorted());
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 
   // The preset's per-process logs depend on V8 actually expanding %p to the pid;
   // if a V8 upgrade drops the placeholder, this catches it before users do.
