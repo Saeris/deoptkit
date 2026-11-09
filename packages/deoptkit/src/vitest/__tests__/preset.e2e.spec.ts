@@ -133,7 +133,18 @@ describe("deoptKit vitest preset, end to end", () => {
       (finding) =>
         finding.kind === "megamorphic-ic" && finding.evidence["key"] === "x"
     );
-    expect(site?.original?.file.endsWith("lib.ts")).toBe(true);
+    // This has failed on Windows runners only, while the test above found the same
+    // finding in the same logs. Say what the teardown saw: it reports a log it could not
+    // analyze on the child's stderr, which is otherwise discarded.
+    if (site?.original === undefined) {
+      const logs = new Set(payload.findings.map(({ script }) => script));
+      throw new Error(
+        `findings.json has no source-mapped megamorphic "x" finding (${site === undefined ? "none at all" : `one at ${site.file}:${String(site.line)}, unmapped`}). ` +
+          `It holds ${String(payload.findings.length)} finding(s) from ${String(logs.size)} log(s); the manifest lists ${String(readManifest().logfiles.length)}.\n` +
+          `vitest stderr:\n${run.stderr.slice(-3000)}`
+      );
+    }
+    expect(site.original.file.endsWith("lib.ts")).toBe(true);
     expect(site?.original?.line).toBe(2);
 
     const diagnostics = toDiagnostics(payload, () => false);
