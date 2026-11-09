@@ -16,15 +16,15 @@ Background reading: the TypeScript team's [Introducing Deopt Explorer](https://d
 
 deoptkit ships several surfaces over one engine, all from the `deoptkit` package:
 
-| Surface                                      | What it is                                                                                                                           |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **MCP server** (`deoptkit` / `deoptkit mcp`) | Eleven tools + a prompt that let an AI agent profile a workload, get ranked findings, drill in, and verify fixes.                    |
-| **`deoptkit ci`**                            | Snapshot-style regression gate: fails CI when a change introduces new structural findings (megamorphic ICs, deopt loops, map churn). |
-| **`deoptkit lsp`**                           | A language server that publishes findings as inline editor diagnostics (squiggles + Problems panel).                                 |
-| **`deoptkit/harness`**                       | `mark()` / `observed()` / `interleaved()` — plant in-log window markers, warm up hot code, and time variants against each other.     |
-| **`deoptkit/vitest`** + **`deoptkit/bench`** | A `vitest bench` preset that records V8 logs per worker, and `benchObserved()` to window each case.                                  |
-| **`deoptkit/serve`**                         | `driveServer()` — boot an SSR app in-process and drive it with requests so its runtime is observable.                                |
-| **library API** (`deoptkit`)                 | `parseLog`, `computeFindings`, `compareSessions`, `runWorkload`, … for building your own tooling.                                    |
+| Surface                                      | What it is                                                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MCP server** (`deoptkit` / `deoptkit mcp`) | Eleven tools + a prompt that let an AI agent profile a workload, get ranked findings, drill in, and verify fixes.                                           |
+| **`deoptkit ci`**                            | Snapshot-style regression gate: fails CI when a change introduces new structural findings (megamorphic ICs, deopt loops, map churn).                        |
+| **`deoptkit lsp`**                           | A language server that publishes findings as inline editor diagnostics (squiggles + Problems panel).                                                        |
+| **`deoptkit/harness`**                       | `mark()` / `observed()` / `interleaved()` — plant in-log window markers, warm up hot code, and time variants against each other.                            |
+| **`deoptkit/vitest`** + **`deoptkit/bench`** | A `vitest bench` preset that records V8 logs per worker, a provider that runs each case a fixed number of times, and `benchObserved()` to window each case. |
+| **`deoptkit/serve`**                         | `driveServer()` — boot an SSR app in-process and drive it with requests so its runtime is observable.                                                       |
+| **library API** (`deoptkit`)                 | `parseLog`, `computeFindings`, `compareSessions`, `runWorkload`, … for building your own tooling.                                                           |
 
 ## Quick start (AI agent + MCP)
 
@@ -128,6 +128,19 @@ test("parse record", async ({ bench }) => {
 
 Run `vitest bench`, then `load_manifest { path: ".deopt/manifest.json" }` to load every worker's log as a session. (Coverage must be off — the preset refuses to run otherwise, since instrumentation changes optimization behavior.) To observe the shipped code at exact source positions, without Vite's module runner in between, use `deoptKit({ nativeEsm: true })`; see the [recipe](../../docs/recipes.md) for its requirements.
 
+**Bound the logs with a fixed count.** Vitest runs each case for a time budget (one second by default), so under V8 logging a fast case runs hundreds of thousands of times, and with every log category on, one run can write gigabytes. `iterations` runs each case a fixed number of times instead, with no time budget and no warm-up. deoptkit's benchmark provider applies the count, and you select it in your own `benchmark` config:
+
+```ts
+export default defineConfig({
+  test: {
+    ...deoptKit({ outDir: ".deopt", iterations: 2_000 }),
+    benchmark: { provider: "deoptkit/vitest/provider" }
+  }
+});
+```
+
+A bench that asks for fewer calls keeps its count (`.run({ iterations: 5 })` for a slow case stays 5). The count also makes the findings repeat from run to run, which is what [`deoptkit ci --manifest`](#ci-regression-gating) needs. If `iterations` is set without the provider, the run stops at once with a message, since every case would otherwise still run for the time budget.
+
 Full recipes, including SSR apps (Next/Astro via `deoptkit/serve`) and builds, live in [docs/recipes.md](../../docs/recipes.md).
 
 ## Inline editor diagnostics (LSP)
@@ -160,6 +173,15 @@ Baselines contain identity-only structural findings (no line numbers, severities
 Identities use paths relative to the directory `deoptkit ci` runs in, so run it from the same project directory locally and in CI and the committed baseline matches everywhere.
 
 Findings that sit on a threshold can flicker between runs; build the baseline with `deoptkit ci --accumulate` over a few runs so that only genuinely new sites fail the gate.
+
+To gate Vitest benches instead of scripts, run them under the preset with a fixed `iterations` count, then gate the manifest the run wrote:
+
+```bash
+vitest bench --run                                   # writes .deopt/manifest.json
+deoptkit ci --manifest .deopt/manifest.json          # all of the run's logs, one baseline
+```
+
+The manifest lists only the logs that run wrote, and every one must analyze, or the gate exits 2. A gate over part of a run would pass for the wrong reason. Run the same bench files each time: a run over fewer files reports the rest as findings that no longer occur.
 
 This repository gates itself the same way: `bench/parse.bench.mjs` parses a fixture log under observation and `.github/workflows/ci.yml` runs `deoptkit ci` over it against the committed baseline.
 

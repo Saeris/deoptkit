@@ -31,6 +31,8 @@ type Baseline = v.InferOutput<typeof baselineSchema>;
 
 export interface CiOptions {
   scripts: string[];
+  /** Manifests a `vitest bench` run under the `deoptkit/vitest` preset wrote. */
+  manifests: string[];
   update: boolean;
   accumulate: boolean;
   outDir: string;
@@ -40,6 +42,7 @@ export interface CiOptions {
 export const parseCiArgs = (args: string[]): CiOptions | { error: string } => {
   const options: CiOptions = {
     scripts: [],
+    manifests: [],
     update: false,
     accumulate: false,
     outDir: ".deopt"
@@ -52,16 +55,20 @@ export const parseCiArgs = (args: string[]): CiOptions | { error: string } => {
       const value = args.at(++index);
       if (value === undefined) return { error: "--out-dir requires a value" };
       options.outDir = value;
+    } else if (arg === "--manifest") {
+      const value = args.at(++index);
+      if (value === undefined) return { error: "--manifest requires a value" };
+      options.manifests.push(value);
     } else if (arg.startsWith("-")) return { error: `Unknown flag: ${arg}` };
     else options.scripts.push(arg);
   }
   if (options.update && options.accumulate) {
     return { error: "--update and --accumulate cannot be combined" };
   }
-  if (options.scripts.length === 0) {
+  if (options.scripts.length === 0 && options.manifests.length === 0) {
     return {
       error:
-        "Usage: deoptkit ci [--update|--accumulate] [--out-dir <dir>] <script.mjs> [...]"
+        "Usage: deoptkit ci [--update|--accumulate] [--out-dir <dir>] [--manifest <manifest.json>] [<script.mjs> ...]"
     };
   }
   return options;
@@ -153,6 +160,18 @@ export const gitHubAnnotation = (found: LocatedFinding): string => {
   return `::warning file=${rel},line=${at.line},col=${at.column},title=deoptkit ${found.kind}::${found.summary}`;
 };
 
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const analyzeLog = async (logfile: string): Promise<LocatedFinding[]> => {
+  const model: LogModel = await parseLog(logfile);
+  const resolver = new SourceMapResolver(model);
+  return computeFindings(model).map((found) => {
+    const original = resolver.resolve(found.file, found.line, found.column);
+    return original ? { ...found, original } : found;
+  });
+};
+
 const analyzeScript = async (
   script: string
 ): Promise<LocatedFinding[] | { error: string }> => {
@@ -166,15 +185,50 @@ const analyzeScript = async (
         error: `${script} exited ${run.exitCode}${run.timedOut ? " (timed out)" : ""}: ${run.stderrTail.slice(-500)}`
       };
     }
-    const model: LogModel = await parseLog(run.logfile);
-    const resolver = new SourceMapResolver(model);
-    return computeFindings(model).map((found) => {
-      const original = resolver.resolve(found.file, found.line, found.column);
-      return original ? { ...found, original } : found;
-    });
+    return await analyzeLog(run.logfile);
   } finally {
     await rm(run.dir, { recursive: true, force: true });
   }
+};
+
+const manifestSchema = v.object({ logfiles: v.array(v.string()) });
+
+/**
+ * Gate a `vitest bench` run instead of a script: the logs its manifest lists, as one
+ * set of findings against one baseline. The run should use `deoptKit({ iterations })`,
+ * because a time-budgeted case runs as many times as the machine allows, and findings
+ * at a threshold then come and go between machines.
+ *
+ * Every log must analyze. The bench teardown skips a log it cannot read, but a gate
+ * that did the same would pass on part of the run.
+ */
+const analyzeManifest = async (
+  manifest: string
+): Promise<LocatedFinding[] | { error: string }> => {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(manifest, "utf8"));
+  } catch (error) {
+    return { error: `cannot read ${manifest}: ${messageOf(error)}` };
+  }
+  const parsed = v.safeParse(manifestSchema, raw);
+  if (!parsed.success) {
+    return { error: `${manifest} is not a deoptkit manifest` };
+  }
+  if (parsed.output.logfiles.length === 0) {
+    return {
+      error: `${manifest} lists no logs: run vitest bench with the deoptkit/vitest preset first`
+    };
+  }
+  const findings: LocatedFinding[] = [];
+  for (const logfile of parsed.output.logfiles) {
+    try {
+      findings.push(...(await analyzeLog(logfile)));
+    } catch (error) {
+      return { error: `cannot analyze ${logfile}: ${messageOf(error)}` };
+    }
+  }
+  return findings;
 };
 
 const log = (message: string): void => {
@@ -199,8 +253,22 @@ export const runCi = async (args: string[]): Promise<number> => {
     LocatedFinding & { script: string; baselined: boolean }
   > = [];
 
-  for (const script of options.scripts) {
-    const findings = await analyzeScript(script);
+  // A manifest gates like a script: its path names its baseline and its findings.
+  const sources: Array<{
+    script: string;
+    analyze: () => Promise<LocatedFinding[] | { error: string }>;
+  }> = [
+    ...options.scripts.map((script) => ({
+      script,
+      analyze: async () => analyzeScript(script)
+    })),
+    ...options.manifests.map((manifest) => ({
+      script: manifest,
+      analyze: async () => analyzeManifest(manifest)
+    }))
+  ];
+  for (const { script, analyze } of sources) {
+    const findings = await analyze();
     if ("error" in findings) {
       log(`deoptkit ci: ${findings.error}`);
       return 2;

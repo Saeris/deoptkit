@@ -1,4 +1,5 @@
-import { readdir, writeFile } from "node:fs/promises";
+import { readdirSync, statSync } from "node:fs";
+import { readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { computeFindings } from "../analysis/findings";
 import type { Finding } from "../analysis/findings";
@@ -16,6 +17,36 @@ const coverageEnabled = (project: unknown): boolean => {
   const coverage = config["coverage"];
   return isRecord(coverage) && coverage["enabled"] === true;
 };
+
+/** Walk `project.config.benchmark.provider`, which Vitest resolves to the module's absolute path. */
+const benchmarkProvider = (project: unknown): string | undefined => {
+  if (!isRecord(project)) return undefined;
+  const config = project["config"];
+  if (!isRecord(config)) return undefined;
+  const benchmark = config["benchmark"];
+  if (!isRecord(benchmark)) return undefined;
+  const provider = benchmark["provider"];
+  return typeof provider === "string" ? provider : undefined;
+};
+
+/** The file `deoptkit/vitest/provider` resolves to, however the package is linked. */
+const PROVIDER_FILE = /(?:^|[\\/])vitest-provider\.mjs$/u;
+
+const LOG_FILE = /^v8-.*\.log$/u;
+
+/**
+ * The logs already in the output directory when the run started, with their
+ * modification times. The directory keeps every earlier run's logs, and a manifest
+ * that listed them would hand `deoptkit ci --manifest` findings from old code.
+ */
+let logsBefore = new Map<string, number>();
+
+const existingLogs = (outDir: string): Map<string, number> =>
+  new Map(
+    readdirSync(outDir)
+      .filter((name) => LOG_FILE.test(name))
+      .map((name) => [name, statSync(join(outDir, name)).mtimeMs])
+  );
 
 const requireOutDir = (): string => {
   const outDir = process.env["DEOPTKIT_OUT_DIR"];
@@ -50,15 +81,27 @@ export interface DeoptKitFindingsFile {
 
 /**
  * Vitest global setup registered by the `deoptkit/vitest` preset. Refuses coverage
- * runs — coverage instrumentation changes the optimization behavior being measured.
+ * runs — coverage instrumentation changes the optimization behavior being measured —
+ * and an iteration limit that nothing would apply.
  */
 export const setup = (project?: unknown): void => {
-  requireOutDir();
+  const outDir = requireOutDir();
   if (coverageEnabled(project)) {
     throw new Error(
       "deoptkit: disable coverage for observation runs — coverage instrumentation changes the optimization behavior being measured."
     );
   }
+  // Only deoptkit's provider reads the limit. Without it every case still runs for
+  // Vitest's time budget, and the logs grow as if `iterations` had never been set.
+  if (
+    process.env["DEOPTKIT_ITERATIONS"] !== undefined &&
+    !PROVIDER_FILE.test(benchmarkProvider(project) ?? "")
+  ) {
+    throw new Error(
+      "deoptkit: `iterations` needs deoptkit's benchmark provider. Add `provider: \"deoptkit/vitest/provider\"` to this project's `benchmark` config."
+    );
+  }
+  logsBefore = existingLogs(outDir);
 };
 
 /**
@@ -67,13 +110,19 @@ export const setup = (project?: unknown): void => {
  */
 export const teardown = async (): Promise<void> => {
   const outDir = requireOutDir();
-  const entries = await readdir(outDir);
+  const logfiles: string[] = [];
+  for (const name of await readdir(outDir)) {
+    if (!LOG_FILE.test(name)) continue;
+    const logfile = join(outDir, name);
+    // An earlier run's log is unchanged. A worker that reuses an old pid rewrites
+    // that file, so a name seen before still counts once its time has moved.
+    if (logsBefore.get(name) === (await stat(logfile)).mtimeMs) continue;
+    logfiles.push(logfile);
+  }
   const manifest: DeoptKitManifest = {
     createdAt: new Date().toISOString(),
     outDir,
-    logfiles: entries
-      .filter((name) => /^v8-.*\.log$/u.test(name))
-      .map((name) => join(outDir, name))
+    logfiles
   };
   await writeFile(
     join(outDir, "manifest.json"),
