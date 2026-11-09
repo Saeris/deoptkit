@@ -116,7 +116,7 @@ describe("deoptKit vitest preset", () => {
   it("writes a manifest and the findings interchange for produced logs on teardown", async () => {
     deoptKit({ outDir });
     setup({ config: { coverage: { enabled: false } } });
-    const logfile = join(outDir, "v8-12345.log");
+    const logfile = join(outDir, "v8-workload.log");
     await rename(generateWorkloadLog("map-churn", outDir), logfile);
     await writeFile(join(outDir, "unrelated.txt"), "ignore me\n");
     await teardown();
@@ -146,8 +146,10 @@ describe("deoptKit vitest preset", () => {
     const dir = await mkdtemp(join(tmpdir(), "deoptkit-runs-"));
     try {
       deoptKit({ outDir: dir });
-      const stale = join(dir, "v8-1.log");
-      const reused = join(dir, "v8-2.log");
+      // Names without a pid: the teardown waits for a log's writer to exit, and on
+      // Linux pids 1 and 2 always belong to running processes.
+      const stale = join(dir, "v8-stale.log");
+      const reused = join(dir, "v8-reused.log");
       const past = new Date(Date.now() - 60_000);
       for (const logfile of [stale, reused]) {
         await writeFile(logfile, "");
@@ -155,7 +157,7 @@ describe("deoptKit vitest preset", () => {
       }
       setup({ config: { coverage: { enabled: false } } });
       await writeFile(reused, "");
-      const fresh = join(dir, "v8-3.log");
+      const fresh = join(dir, "v8-fresh.log");
       await writeFile(fresh, "");
       await teardown();
       const manifest = JSON.parse(
